@@ -18,6 +18,7 @@ export default function StartPage() {
   const [location, setLocation] = useState('')
   const [manufacturer, setManufacturer] = useState('')
   const [freeMode, setFreeMode] = useState(false)
+  const [addingLocation, setAddingLocation] = useState(false)
 
   // Ort/Hersteller mit zuletzt genutzten Werten vorbelegen.
   useEffect(() => {
@@ -161,16 +162,57 @@ export default function StartPage() {
             {/* Ort + Hersteller */}
             <section className="card">
               <label className="label">Ort</label>
-              <input
-                className="input"
-                list="locations"
-                placeholder="z. B. FitX Innenstadt"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-              />
-              <datalist id="locations">
-                {settings?.locations.map((l) => <option key={l} value={l} />)}
-              </datalist>
+              {settings && settings.locations.length > 0 && !addingLocation ? (
+                <>
+                  <select
+                    className="input"
+                    value={settings.locations.includes(location) ? location : ''}
+                    onChange={(e) => {
+                      if (e.target.value === '__new__') {
+                        setAddingLocation(true)
+                        setLocation('')
+                      } else {
+                        setLocation(e.target.value)
+                      }
+                    }}
+                  >
+                    <option value="" disabled>
+                      Ort wählen…
+                    </option>
+                    {settings.locations.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                    <option value="__new__">＋ Neuer Ort…</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-muted">
+                    An bekannten Orten werden die Gewichte vom letzten Mal
+                    vorbelegt.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <input
+                    className="input"
+                    autoFocus={addingLocation}
+                    placeholder="z. B. FitX Innenstadt"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                  {settings && settings.locations.length > 0 ? (
+                    <button
+                      className="mt-1.5 text-xs text-muted underline"
+                      onClick={() => {
+                        setAddingLocation(false)
+                        setLocation(settings.lastLocation)
+                      }}
+                    >
+                      Zurück zur Auswahl
+                    </button>
+                  ) : null}
+                </>
+              )}
 
               <label className="label mt-4">
                 Geräte-Hersteller
