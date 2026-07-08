@@ -23,6 +23,9 @@ export default function PlanDayEditPage() {
   const [reps, setReps] = useState('10')
   const [weight, setWeight] = useState('')
   const [note, setNote] = useState('')
+  // Individuelle Sätze
+  const [customMode, setCustomMode] = useState(false)
+  const [customRows, setCustomRows] = useState<{ reps: string; weight: string }[]>([])
 
   const suggestions = useMemo(() => {
     const q = name.trim().toLowerCase()
@@ -49,6 +52,8 @@ export default function PlanDayEditPage() {
     setReps('10')
     setWeight('')
     setNote('')
+    setCustomMode(false)
+    setCustomRows([{ reps: '10', weight: '' }])
   }
 
   function openEdit(ex: PlanExercise) {
@@ -59,6 +64,30 @@ export default function PlanDayEditPage() {
     setReps(String(ex.targetReps))
     setWeight(ex.targetWeight != null ? String(ex.targetWeight) : '')
     setNote(ex.note ?? '')
+    const hasCustom = !!(ex.customSets && ex.customSets.length)
+    setCustomMode(hasCustom)
+    setCustomRows(
+      hasCustom
+        ? ex.customSets!.map((c) => ({
+            reps: String(c.reps),
+            weight: c.weight != null ? String(c.weight) : '',
+          }))
+        : [{ reps: String(ex.targetReps), weight: ex.targetWeight != null ? String(ex.targetWeight) : '' }],
+    )
+  }
+
+  // Custom-Zeilen bearbeiten
+  function setRow(i: number, patch: Partial<{ reps: string; weight: string }>) {
+    setCustomRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  }
+  function addRow() {
+    setCustomRows((rows) => [
+      ...rows,
+      { ...(rows[rows.length - 1] ?? { reps: '10', weight: '' }) },
+    ])
+  }
+  function removeRow(i: number) {
+    setCustomRows((rows) => (rows.length > 1 ? rows.filter((_, j) => j !== i) : rows))
   }
 
   async function save() {
@@ -66,14 +95,35 @@ export default function PlanDayEditPage() {
     const cleanName = name.trim()
     if (!cleanName) return
     const exerciseId = await upsertExerciseByName(cleanName)
-    const updated: PlanExercise = {
-      id: editing.id,
-      exerciseId,
-      name: cleanName,
-      targetSets: Math.max(1, parseInt(sets, 10) || 1),
-      targetReps: Math.max(1, parseInt(reps, 10) || 1),
-      targetWeight: weight.trim() ? parseFloat(weight.replace(',', '.')) : undefined,
-      note: note.trim() || undefined,
+
+    let updated: PlanExercise
+    if (customMode) {
+      const customSets = customRows.map((r) => ({
+        reps: Math.max(1, parseInt(r.reps, 10) || 1),
+        weight: r.weight.trim() ? parseFloat(r.weight.replace(',', '.')) : undefined,
+      }))
+      updated = {
+        id: editing.id,
+        exerciseId,
+        name: cleanName,
+        // targetSets/targetReps als Fallback-Anzeige spiegeln
+        targetSets: customSets.length,
+        targetReps: customSets[0]?.reps ?? 1,
+        targetWeight: undefined,
+        note: note.trim() || undefined,
+        customSets,
+      }
+    } else {
+      updated = {
+        id: editing.id,
+        exerciseId,
+        name: cleanName,
+        targetSets: Math.max(1, parseInt(sets, 10) || 1),
+        targetReps: Math.max(1, parseInt(reps, 10) || 1),
+        targetWeight: weight.trim() ? parseFloat(weight.replace(',', '.')) : undefined,
+        note: note.trim() || undefined,
+        customSets: undefined,
+      }
     }
     const exercises = isNew
       ? [...day.exercises, updated]
@@ -146,8 +196,19 @@ export default function PlanDayEditPage() {
                 >
                   <p className="truncate font-semibold">{ex.name}</p>
                   <p className="text-sm text-neutral-400">
-                    {ex.targetSets} × {ex.targetReps}
-                    {ex.targetWeight != null ? ` · ${ex.targetWeight} kg` : ''}
+                    {ex.customSets && ex.customSets.length ? (
+                      <>
+                        {ex.customSets.length} Sätze ·{' '}
+                        {ex.customSets
+                          .map((c) => `${c.reps}${c.weight != null ? '·' + c.weight : ''}`)
+                          .join(' / ')}
+                      </>
+                    ) : (
+                      <>
+                        {ex.targetSets} × {ex.targetReps}
+                        {ex.targetWeight != null ? ` · ${ex.targetWeight} kg` : ''}
+                      </>
+                    )}
                   </p>
                   {ex.note ? (
                     <p className="mt-0.5 truncate text-xs text-neutral-500">
@@ -226,38 +287,102 @@ export default function PlanDayEditPage() {
           </div>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <div>
-            <label className="label">Sätze</label>
-            <input
-              className="input text-center"
-              type="number"
-              inputMode="numeric"
-              value={sets}
-              onChange={(e) => setSets(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">Wdh.</label>
-            <input
-              className="input text-center"
-              type="number"
-              inputMode="numeric"
-              value={reps}
-              onChange={(e) => setReps(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="label">kg (opt.)</label>
-            <input
-              className="input text-center"
-              type="number"
-              inputMode="decimal"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-            />
-          </div>
+        {/* Umschalter: einfach vs. individuelle Sätze */}
+        <div className="mt-4 flex gap-2">
+          <button
+            className={'chip flex-1 justify-center ' + (!customMode ? 'chip-active' : '')}
+            onClick={() => setCustomMode(false)}
+          >
+            Sätze × Wdh.
+          </button>
+          <button
+            className={'chip flex-1 justify-center ' + (customMode ? 'chip-active' : '')}
+            onClick={() => setCustomMode(true)}
+          >
+            Sätze individuell
+          </button>
         </div>
+
+        {!customMode ? (
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Sätze</label>
+              <input
+                className="input text-center"
+                type="number"
+                inputMode="numeric"
+                value={sets}
+                onChange={(e) => setSets(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">Wdh.</label>
+              <input
+                className="input text-center"
+                type="number"
+                inputMode="numeric"
+                value={reps}
+                onChange={(e) => setReps(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">kg (opt.)</label>
+              <input
+                className="input text-center"
+                type="number"
+                inputMode="decimal"
+                value={weight}
+                onChange={(e) => setWeight(e.target.value)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3">
+            <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_2.5rem] gap-2 px-1 text-[11px] uppercase tracking-wide text-muted">
+              <span className="text-center">#</span>
+              <span className="text-center">Wdh.</span>
+              <span className="text-center">kg</span>
+              <span />
+            </div>
+            <div className="space-y-2">
+              {customRows.map((r, i) => (
+                <div key={i} className="grid grid-cols-[2rem_1fr_1fr_2.5rem] items-center gap-2">
+                  <span className="text-center text-sm font-semibold text-muted">{i + 1}</span>
+                  <input
+                    className="input px-2 py-2.5 text-center"
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="Wdh."
+                    value={r.reps}
+                    onChange={(e) => setRow(i, { reps: e.target.value })}
+                  />
+                  <input
+                    className="input px-2 py-2.5 text-center"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="kg"
+                    value={r.weight}
+                    onChange={(e) => setRow(i, { weight: e.target.value })}
+                  />
+                  <button
+                    className="flex h-11 items-center justify-center rounded-lg bg-white/5 text-muted active:bg-white/10 disabled:opacity-30"
+                    onClick={() => removeRow(i)}
+                    disabled={customRows.length <= 1}
+                    aria-label="Satz entfernen"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button className="btn-ghost btn-sm mt-2 w-full" onClick={addRow}>
+              <PlusIcon className="h-4 w-4" /> Satz hinzufügen
+            </button>
+            <p className="mt-1.5 text-xs text-muted">
+              Ideal für Aufwärm- und schwere Endsätze mit eigenem Gewicht.
+            </p>
+          </div>
+        )}
 
         <label className="label mt-4">Hinweis (optional)</label>
         <input
