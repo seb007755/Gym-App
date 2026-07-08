@@ -14,7 +14,7 @@
   }
 
   body {
-    @apply bg-bg text-neutral-100 antialiased;
+    @apply bg-bg text-ink antialiased;
     /* iOS: keine Ueberdehnung/Bounce, App-Feeling */
     overscroll-behavior-y: none;
     -webkit-tap-highlight-color: transparent;
@@ -32,40 +32,49 @@
 }
 
 @layer components {
-  /* Grosse Touch-Targets, gut bedienbar mit einer Hand */
+  /* Grosse Touch-Targets (min 48px), gut bedienbar mit einer Hand.
+     Buttons: 8px Radius, bold. */
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold transition-colors active:scale-[0.98];
+    @apply inline-flex min-h-[48px] select-none items-center justify-center gap-2 rounded-lg px-4 py-3 text-base font-bold transition-colors active:scale-[0.98];
   }
   .btn-primary {
     @apply btn bg-brand text-white active:bg-brandDark;
   }
   .btn-ghost {
-    @apply btn bg-surface2 text-neutral-100 active:bg-line;
+    @apply btn bg-surface2 text-ink active:bg-white/10;
   }
   .btn-danger {
-    @apply btn bg-red-600 text-white active:bg-red-700;
+    @apply btn bg-brand text-white active:bg-brandDark;
   }
   .btn-sm {
-    @apply rounded-lg px-3 py-2 text-sm;
+    @apply min-h-0 rounded-lg px-3 py-2 text-sm font-semibold;
   }
 
+  /* Karten: 12px Radius, 1px subtiler Rand, 16px Padding */
   .card {
-    @apply rounded-2xl border border-line bg-surface p-4;
+    @apply rounded-xl border border-line bg-surface p-4;
   }
 
+  /* Recessed Input mit Fokus-Glow, grosse gut lesbare Ziffern */
   .input {
-    @apply w-full rounded-xl border border-line bg-surface2 px-3 py-3 text-base text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-brand;
+    @apply w-full rounded-lg border border-line bg-input px-3 py-3 text-lg font-semibold text-ink outline-none transition placeholder:font-normal placeholder:text-muted focus:border-brand focus:ring-2 focus:ring-brand/30;
   }
 
+  /* Labels: Uppercase, klein, gesperrt (KG / WDH …) */
   .label {
-    @apply mb-1 block text-sm font-medium text-neutral-400;
+    @apply mb-1 block text-[11px] font-semibold uppercase tracking-[0.05em] text-muted;
   }
 
   .chip {
-    @apply inline-flex items-center rounded-full border border-line bg-surface2 px-3 py-1.5 text-sm text-neutral-200 active:bg-line;
+    @apply inline-flex min-h-[40px] items-center rounded-lg border border-line bg-surface2 px-3 py-1.5 text-sm font-medium text-ink active:bg-white/10;
   }
   .chip-active {
-    @apply border-brand bg-brand/20 text-brand;
+    @apply border-brand bg-brand/15 text-brand;
+  }
+
+  /* Stepper/Icon-Buttons: 44x44 Tap-Target, white/5 */
+  .stepper {
+    @apply flex h-11 w-11 items-center justify-center rounded-lg bg-white/5 text-ink active:bg-white/10;
   }
 }
 
