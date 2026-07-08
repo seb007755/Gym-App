@@ -5,6 +5,7 @@ import { db } from '../db'
 import { TopBar, Confirm, EmptyState } from '../components/ui'
 import { formatDateTime, formatDurationLong } from '../lib/format'
 import { TrashIcon } from '../components/icons'
+import { NextTimeLine } from './SummaryPage'
 
 export default function HistoryDetailPage() {
   const { sessionId } = useParams()
@@ -85,6 +86,18 @@ export default function HistoryDetailPage() {
                   ))}
                 </div>
               )}
+              {done.some((s) => s.note) ? (
+                <ul className="mt-1.5 space-y-0.5">
+                  {done.map((s, i) =>
+                    s.note ? (
+                      <li key={s.id} className="text-xs text-neutral-500">
+                        <span className="text-neutral-600">Satz {i + 1}:</span> {s.note}
+                      </li>
+                    ) : null,
+                  )}
+                </ul>
+              ) : null}
+              <NextTimeLine ex={ex} />
             </div>
           )
         })}
