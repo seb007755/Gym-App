@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-neutral-100 antialiased;
+    /* iOS: keine Ueberdehnung/Bounce, App-Feeling */
+    overscroll-behavior-y: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Numerische Eingaben ohne Spinner */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+}
+
+@layer components {
+  /* Grosse Touch-Targets, gut bedienbar mit einer Hand */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold transition-colors active:scale-[0.98];
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white active:bg-brandDark;
+  }
+  .btn-ghost {
+    @apply btn bg-surface2 text-neutral-100 active:bg-line;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white active:bg-red-700;
+  }
+  .btn-sm {
+    @apply rounded-lg px-3 py-2 text-sm;
+  }
+
+  .card {
+    @apply rounded-2xl border border-line bg-surface p-4;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface2 px-3 py-3 text-base text-neutral-100 outline-none placeholder:text-neutral-500 focus:border-brand;
+  }
+
+  .label {
+    @apply mb-1 block text-sm font-medium text-neutral-400;
+  }
+
+  .chip {
+    @apply inline-flex items-center rounded-full border border-line bg-surface2 px-3 py-1.5 text-sm text-neutral-200 active:bg-line;
+  }
+  .chip-active {
+    @apply border-brand bg-brand/20 text-brand;
+  }
+}
+
+/* Safe-Area-Padding fuer iPhone-Notch/Home-Indicator */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
