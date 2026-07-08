@@ -8,6 +8,15 @@ export interface Exercise {
 
 // ---- Vorlage / Plan ----
 
+// Empfehlung fuers naechste Mal (Gedaechtnis).
+export type Progression = 'up' | 'same' | 'down'
+
+// Ein individuell im Plan hinterlegter Satz (z.B. Aufwaerm-/schwerer Satz).
+export interface PlanSetTarget {
+  reps: number
+  weight?: number
+}
+
 export interface PlanExercise {
   id: string
   exerciseId?: string // Referenz auf Exercise-Stammdaten (optional)
@@ -16,6 +25,8 @@ export interface PlanExercise {
   targetReps: number
   targetWeight?: number
   note?: string
+  // Wenn gesetzt: individuelle Saetze statt targetSets × targetReps.
+  customSets?: PlanSetTarget[]
 }
 
 export interface PlanDay {
@@ -38,7 +49,10 @@ export interface SetLog {
   weight: number | null
   reps: number | null
   done: boolean
-  note?: string
+  note?: string // optionaler Kommentar pro Satz (Merker fuers naechste Mal)
+  // Referenz vom letzten Mal (zur Anzeige "zuletzt: X kg × Y"), beim Start gesetzt.
+  prevWeight?: number | null
+  prevReps?: number | null
 }
 
 export interface SessionExercise {
@@ -47,6 +61,12 @@ export interface SessionExercise {
   name: string
   sets: SetLog[]
   note?: string
+  // Gedaechtnis: diese Entscheidung gilt fuers NAECHSTE Mal.
+  progression?: Progression | null
+  nextNote?: string
+  // Hinweis vom letzten Mal (zur Anzeige), beim Start uebernommen.
+  hintProgression?: Progression | null
+  hintNote?: string
 }
 
 export interface WorkoutSession {
