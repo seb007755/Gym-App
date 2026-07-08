@@ -45,18 +45,23 @@ export function uid(): string {
   )
 }
 
-export async function getSettings(): Promise<AppSettings> {
-  const s = await db.settings.get(SETTINGS_KEY)
-  if (s) return s
-  const fresh: AppSettings = {
+function defaultSettings(): AppSettings {
+  return {
     key: SETTINGS_KEY,
     locations: [],
     manufacturers: [...DEFAULT_MANUFACTURERS],
     lastLocation: '',
     lastManufacturer: '',
   }
-  await db.settings.put(fresh)
-  return fresh
+}
+
+// NUR-LESEN: darf gefahrlos in useLiveQuery laufen. Schreibt nie in die DB
+// (ein Schreibzugriff im liveQuery-Kontext wirft in Dexie ReadOnlyError).
+// Fehlt der Datensatz, werden Defaults geliefert; persistiert wird erst bei
+// der ersten echten Aenderung ueber saveSettings().
+export async function getSettings(): Promise<AppSettings> {
+  const s = await db.settings.get(SETTINGS_KEY)
+  return s ?? defaultSettings()
 }
 
 export async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
