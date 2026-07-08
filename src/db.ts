@@ -3,6 +3,7 @@ import type {
   AppSettings,
   Exercise,
   Plan,
+  PlanExercise,
   SessionExercise,
   SetLog,
   WorkoutSession,
@@ -121,6 +122,94 @@ export function makeSetsFromTarget(count: number, weight?: number): SetLog[] {
 
 export { newSet }
 
+// ---- Trainings-Gedaechtnis / Gewichts-Vorbelegung ----
+
+// Uebung uebergreifend identifizieren (bevorzugt per Stammdaten-Id, sonst Name).
+function exKey(name: string, exerciseId?: string): string {
+  return exerciseId ? 'id:' + exerciseId : 'name:' + name.trim().toLowerCase()
+}
+
+function findEx(s: WorkoutSession, key: string): SessionExercise | undefined {
+  return s.exercises.find((e) => exKey(e.name, e.exerciseId) === key)
+}
+
+// Ziel-Saetze aus dem Plan (individuell oder einfach).
+function targetsFor(pe: PlanExercise): { reps: number | null; weight?: number }[] {
+  if (pe.customSets && pe.customSets.length) {
+    return pe.customSets.map((c) => ({ reps: c.reps, weight: c.weight }))
+  }
+  const n = Math.max(1, pe.targetSets || 1)
+  return Array.from({ length: n }, () => ({
+    reps: pe.targetReps ?? null,
+    weight: pe.targetWeight,
+  }))
+}
+
+// Waehlt die Quelle fuer die Gewichts-Vorbelegung nach Prioritaet:
+// 1) letztes Training am selben Ort  2) letztes mit gleichem Hersteller
+// 3) letztes Training ueberhaupt — jeweils, das die Uebung enthaelt.
+function pickPrefillSource(
+  finishedDesc: WorkoutSession[],
+  key: string,
+  location: string,
+  manufacturer: string,
+): SessionExercise | undefined {
+  const loc = location.trim().toLowerCase()
+  if (loc) {
+    const bySameLocation = finishedDesc.find(
+      (s) => s.location.trim().toLowerCase() === loc && findEx(s, key),
+    )
+    if (bySameLocation) return findEx(bySameLocation, key)
+  }
+  if (manufacturer.trim()) {
+    const bySameManufacturer = finishedDesc.find(
+      (s) => s.equipmentManufacturer === manufacturer && findEx(s, key),
+    )
+    if (bySameManufacturer) return findEx(bySameManufacturer, key)
+  }
+  const anyLast = finishedDesc.find((s) => findEx(s, key))
+  return anyLast ? findEx(anyLast, key) : undefined
+}
+
+function buildSessionExercise(
+  pe: PlanExercise,
+  finishedDesc: WorkoutSession[],
+  location: string,
+  manufacturer: string,
+): SessionExercise {
+  const key = exKey(pe.name, pe.exerciseId)
+  const source = pickPrefillSource(finishedDesc, key, location, manufacturer)
+  // Hinweis (Pfeil + Notiz) immer vom zuletzt absolvierten Mal dieser Uebung.
+  const lastEver = finishedDesc.find((s) => findEx(s, key))
+  const hintEx = lastEver ? findEx(lastEver, key) : undefined
+
+  const sets: SetLog[] = targetsFor(pe).map((t, i) => {
+    const prev = source?.sets[i]
+    const prevWeight = prev?.weight ?? null
+    const prevReps = prev?.reps ?? null
+    // Letztes Training ueberschreibt den Plan-Standardwert beim Gewicht.
+    const weight = prevWeight != null ? prevWeight : t.weight ?? null
+    return {
+      id: uid(),
+      weight,
+      reps: t.reps ?? null,
+      done: false,
+      prevWeight,
+      prevReps,
+    }
+  })
+
+  return {
+    id: uid(),
+    exerciseId: pe.exerciseId,
+    name: pe.name,
+    note: pe.note,
+    sets,
+    hintProgression: hintEx?.progression ?? null,
+    hintNote: hintEx?.nextNote,
+  }
+}
+
 export async function startSession(opts: {
   plan?: Plan | null
   planDayId?: string | null
@@ -132,18 +221,20 @@ export async function startSession(opts: {
   let planName: string | undefined
   let dayName: string | undefined
 
+  // Verlauf einmal laden (fuer Vorbelegung + Gedaechtnis-Hinweise).
+  const finishedDesc = (await db.sessions.filter((s) => s.finished).toArray()).sort(
+    (a, b) => b.date - a.date,
+  )
+
   if (opts.plan && opts.planDayId) {
     const day = opts.plan.days.find((d) => d.id === opts.planDayId)
     planName = opts.plan.name
     dayName = day?.name
-    // Uebungen aus dem Plan KOPIEREN (keine Referenz -> freie Abweichung)
-    exercises = (day?.exercises ?? []).map((pe) => ({
-      id: uid(),
-      exerciseId: pe.exerciseId,
-      name: pe.name,
-      note: pe.note,
-      sets: makeSetsFromTarget(pe.targetSets, pe.targetWeight),
-    }))
+    // Uebungen aus dem Plan KOPIEREN (keine Referenz -> freie Abweichung),
+    // Gewichte aus dem passenden letzten Training vorbelegen.
+    exercises = (day?.exercises ?? []).map((pe) =>
+      buildSessionExercise(pe, finishedDesc, opts.location, opts.manufacturer),
+    )
   }
 
   const session: WorkoutSession = {
