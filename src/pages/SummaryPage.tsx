@@ -6,7 +6,7 @@ import { db } from '../db'
 import type { SessionExercise } from '../types'
 import { TopBar, EmptyState } from '../components/ui'
 import { formatDateTime, formatDurationLong } from '../lib/format'
-import { DumbbellIcon } from '../components/icons'
+import { DumbbellIcon, TrendDown, TrendFlat, TrendUp } from '../components/icons'
 
 function doneSets(ex: SessionExercise) {
   return ex.sets.filter((s) => s.done && s.reps != null)
@@ -14,6 +14,29 @@ function doneSets(ex: SessionExercise) {
 
 function volume(ex: SessionExercise): number {
   return doneSets(ex).reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 0), 0)
+}
+
+const PROG = {
+  up: { label: 'steigern', Icon: TrendUp, color: 'text-success' },
+  same: { label: 'halten', Icon: TrendFlat, color: 'text-neutral-400' },
+  down: { label: 'reduzieren', Icon: TrendDown, color: 'text-brand' },
+} as const
+
+// "Fürs nächste Mal"-Zeile: Pfeil + Notiz.
+export function NextTimeLine({ ex }: { ex: SessionExercise }) {
+  if (!ex.progression && !ex.nextNote) return null
+  const p = ex.progression ? PROG[ex.progression] : null
+  return (
+    <p className="mt-1 flex items-center gap-1.5 text-xs text-neutral-400">
+      <span className="text-neutral-600">Nächstes Mal:</span>
+      {p ? (
+        <span className={'inline-flex items-center gap-0.5 font-semibold ' + p.color}>
+          <p.Icon className="h-3.5 w-3.5" /> {p.label}
+        </span>
+      ) : null}
+      {ex.nextNote ? <span className="italic">„{ex.nextNote}"</span> : null}
+    </p>
+  )
 }
 
 export default function SummaryPage() {
@@ -118,6 +141,20 @@ export default function SummaryPage() {
                       </span>
                     ))}
                   </div>
+                  {/* Satz-Kommentare */}
+                  {doneSets(ex).some((s) => s.note) ? (
+                    <ul className="mt-1 space-y-0.5">
+                      {doneSets(ex).map((s, i) =>
+                        s.note ? (
+                          <li key={s.id} className="text-xs text-neutral-500">
+                            <span className="text-neutral-600">Satz {i + 1}:</span> {s.note}
+                          </li>
+                        ) : null,
+                      )}
+                    </ul>
+                  ) : null}
+                  {/* Fürs nächste Mal */}
+                  <NextTimeLine ex={ex} />
                 </div>
               ))}
             </div>
