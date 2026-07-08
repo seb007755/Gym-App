@@ -9,10 +9,18 @@ import {
   uid,
   upsertExerciseByName,
 } from '../db'
-import type { SessionExercise, SetLog, WorkoutSession } from '../types'
+import type { Progression, SessionExercise, SetLog, WorkoutSession } from '../types'
 import { TopBar, Sheet, Confirm } from '../components/ui'
 import { formatDuration } from '../lib/format'
-import { CheckIcon, PlusIcon, TrashIcon } from '../components/icons'
+import {
+  CheckIcon,
+  NoteIcon,
+  PlusIcon,
+  TrashIcon,
+  TrendDown,
+  TrendFlat,
+  TrendUp,
+} from '../components/icons'
 
 // Live-Timer aus Startzeitstempel (Backgrounding-sicher).
 function useElapsed(startTime: number | undefined): number {
@@ -125,6 +133,10 @@ export default function ActiveWorkoutPage() {
     }))
   }
 
+  function setExerciseField(exId: string, patch: Partial<SessionExercise>) {
+    mutateExercise(exId, (ex) => ({ ...ex, ...patch }))
+  }
+
   function removeExercise(exId: string) {
     if (!session) return
     persist({ ...session, exercises: session.exercises.filter((e) => e.id !== exId) })
@@ -204,6 +216,8 @@ export default function ActiveWorkoutPage() {
             onAddSet={() => addSet(ex.id)}
             onRemoveSet={(sid) => removeSet(ex.id, sid)}
             onRemoveExercise={() => removeExercise(ex.id)}
+            onProgression={(p) => setExerciseField(ex.id, { progression: p })}
+            onNextNote={(t) => setExerciseField(ex.id, { nextNote: t })}
           />
         ))}
 
@@ -279,6 +293,29 @@ export default function ActiveWorkoutPage() {
   )
 }
 
+const PROGRESSIONS: { key: Progression; label: string; Icon: typeof TrendUp; color: string }[] = [
+  { key: 'up', label: 'steigern', Icon: TrendUp, color: 'text-success' },
+  { key: 'same', label: 'halten', Icon: TrendFlat, color: 'text-muted' },
+  { key: 'down', label: 'reduzieren', Icon: TrendDown, color: 'text-brand' },
+]
+
+// Kompakter Hinweis vom letzten Mal (Pfeil + Notiz).
+function HintBanner({ ex }: { ex: SessionExercise }) {
+  if (!ex.hintProgression && !ex.hintNote) return null
+  const p = PROGRESSIONS.find((x) => x.key === ex.hintProgression)
+  return (
+    <div className="mb-2 flex items-center gap-2 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs text-muted">
+      <span className="shrink-0 font-semibold uppercase tracking-wide">Letztes Mal</span>
+      {p ? (
+        <span className={'inline-flex items-center gap-0.5 font-semibold ' + p.color}>
+          <p.Icon className="h-3.5 w-3.5" /> {p.label}
+        </span>
+      ) : null}
+      {ex.hintNote ? <span className="truncate italic">„{ex.hintNote}"</span> : null}
+    </div>
+  )
+}
+
 function ExerciseCard({
   ex,
   onToggle,
@@ -286,6 +323,8 @@ function ExerciseCard({
   onAddSet,
   onRemoveSet,
   onRemoveExercise,
+  onProgression,
+  onNextNote,
 }: {
   ex: SessionExercise
   onToggle: (s: SetLog) => void
@@ -293,14 +332,21 @@ function ExerciseCard({
   onAddSet: () => void
   onRemoveSet: (setId: string) => void
   onRemoveExercise: () => void
+  onProgression: (p: Progression) => void
+  onNextNote: (t: string) => void
 }) {
   const [confirmDel, setConfirmDel] = useState(false)
+  // Welche Satz-Notizfelder sind aufgeklappt
+  const [openNotes, setOpenNotes] = useState<Record<string, boolean>>({})
+  const toggleNote = (id: string) =>
+    setOpenNotes((o) => ({ ...o, [id]: !o[id] }))
+
   return (
     <section className="card p-3">
       <div className="mb-2 flex items-center gap-2">
         <h3 className="flex-1 truncate text-base font-bold">{ex.name}</h3>
         <button
-          className="p-1 text-neutral-600 active:text-red-400"
+          className="p-1 text-muted active:text-brand"
           onClick={() => setConfirmDel(true)}
           aria-label="Übung entfernen"
         >
@@ -308,7 +354,9 @@ function ExerciseCard({
         </button>
       </div>
 
-      <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 px-1 text-xs text-neutral-500">
+      <HintBanner ex={ex} />
+
+      <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 px-1 text-[11px] uppercase tracking-wide text-muted">
         <span className="text-center">#</span>
         <span className="text-center">kg</span>
         <span className="text-center">Wdh.</span>
@@ -316,55 +364,85 @@ function ExerciseCard({
       </div>
 
       <ul className="space-y-2">
-        {ex.sets.map((s, i) => (
-          <li
-            key={s.id}
-            className={
-              'grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 rounded-xl p-1 ' +
-              (s.done ? 'bg-success/10' : '')
-            }
-          >
-            <span className="text-center text-sm font-semibold text-neutral-500">
-              {i + 1}
-            </span>
-            <input
-              className="input px-2 py-2.5 text-center text-lg"
-              type="number"
-              inputMode="decimal"
-              placeholder="–"
-              value={s.weight ?? ''}
-              onChange={(e) =>
-                onSet(s.id, {
-                  weight: e.target.value === '' ? null : parseFloat(e.target.value.replace(',', '.')),
-                })
-              }
-            />
-            <input
-              className="input px-2 py-2.5 text-center text-lg"
-              type="number"
-              inputMode="numeric"
-              placeholder="–"
-              value={s.reps ?? ''}
-              onChange={(e) =>
-                onSet(s.id, {
-                  reps: e.target.value === '' ? null : parseInt(e.target.value, 10),
-                })
-              }
-            />
-            <button
-              className={
-                'flex h-11 items-center justify-center rounded-lg transition-colors ' +
-                (s.done
-                  ? 'bg-success text-bg'
-                  : 'bg-white/5 text-muted active:bg-white/10')
-              }
-              onClick={() => onToggle(s)}
-              aria-label={s.done ? 'Satz erledigt' : 'Satz abhaken'}
+        {ex.sets.map((s, i) => {
+          const hasRef = s.prevWeight != null || s.prevReps != null
+          const noteOpen = openNotes[s.id] || !!s.note
+          return (
+            <li
+              key={s.id}
+              className={'rounded-xl p-1 ' + (s.done ? 'bg-success/10' : '')}
             >
-              <CheckIcon className="h-5 w-5" />
-            </button>
-          </li>
-        ))}
+              <div className="grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2">
+                <span className="text-center text-sm font-semibold text-muted">
+                  {i + 1}
+                </span>
+                <input
+                  className="input px-2 py-2.5 text-center text-lg"
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="–"
+                  value={s.weight ?? ''}
+                  onChange={(e) =>
+                    onSet(s.id, {
+                      weight: e.target.value === '' ? null : parseFloat(e.target.value.replace(',', '.')),
+                    })
+                  }
+                />
+                <input
+                  className="input px-2 py-2.5 text-center text-lg"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="–"
+                  value={s.reps ?? ''}
+                  onChange={(e) =>
+                    onSet(s.id, {
+                      reps: e.target.value === '' ? null : parseInt(e.target.value, 10),
+                    })
+                  }
+                />
+                <button
+                  className={
+                    'flex h-11 items-center justify-center rounded-lg transition-colors ' +
+                    (s.done
+                      ? 'bg-success text-bg'
+                      : 'bg-white/5 text-muted active:bg-white/10')
+                  }
+                  onClick={() => onToggle(s)}
+                  aria-label={s.done ? 'Satz erledigt' : 'Satz abhaken'}
+                >
+                  <CheckIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Referenz vom letzten Mal + optionaler Kommentar */}
+              <div className="mt-1 flex min-h-[1.25rem] items-center gap-2 pl-9 pr-1 text-xs">
+                <span className="flex-1 text-muted">
+                  {hasRef
+                    ? `zuletzt: ${s.prevWeight != null ? s.prevWeight + ' kg' : '–'} × ${s.prevReps ?? '–'}`
+                    : ''}
+                </span>
+                <button
+                  className={
+                    'inline-flex items-center gap-1 rounded px-1.5 py-0.5 ' +
+                    (noteOpen ? 'text-ink' : 'text-muted active:text-ink')
+                  }
+                  onClick={() => toggleNote(s.id)}
+                >
+                  <NoteIcon className="h-3.5 w-3.5" />
+                  {s.note ? '' : 'Notiz'}
+                </button>
+              </div>
+              {noteOpen ? (
+                <input
+                  className="input mt-1 py-2 text-sm"
+                  placeholder="Kommentar (optional), z. B. Hammer / Curl"
+                  value={s.note ?? ''}
+                  onChange={(e) => onSet(s.id, { note: e.target.value || undefined })}
+                />
+              ) : null}
+            </li>
+          )
+        })}
       </ul>
 
       <div className="mt-2 flex gap-2">
@@ -373,12 +451,44 @@ function ExerciseCard({
         </button>
         {ex.sets.length > 1 ? (
           <button
-            className="btn-ghost btn-sm text-neutral-400"
+            className="btn-ghost btn-sm text-muted"
             onClick={() => onRemoveSet(ex.sets[ex.sets.length - 1].id)}
           >
             Satz entfernen
           </button>
         ) : null}
+      </div>
+
+      {/* Fürs nächste Mal merken: Pfeil + Notiz */}
+      <div className="mt-3 border-t border-line pt-3">
+        <p className="label mb-2">Fürs nächste Mal</p>
+        <div className="flex gap-2">
+          {PROGRESSIONS.map((p) => {
+            const active = ex.progression === p.key
+            return (
+              <button
+                key={p.key}
+                className={
+                  'flex flex-1 flex-col items-center gap-0.5 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ' +
+                  (active
+                    ? 'border-current ' + p.color + ' bg-white/5'
+                    : 'border-line text-muted active:bg-white/10')
+                }
+                onClick={() => onProgression(p.key)}
+                aria-pressed={active}
+              >
+                <p.Icon className="h-5 w-5" />
+                {p.label}
+              </button>
+            )
+          })}
+        </div>
+        <input
+          className="input mt-2 py-2 text-sm"
+          placeholder="Notiz fürs nächste Mal (optional)"
+          value={ex.nextNote ?? ''}
+          onChange={(e) => onNextNote(e.target.value)}
+        />
       </div>
 
       <Confirm
