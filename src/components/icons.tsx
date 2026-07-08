@@ -83,3 +83,35 @@ export function ArrowLeft({ className }: P) {
     </svg>
   )
 }
+
+export function TrendUp({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17l6-6 4 4 6-6M16 7h4v4" />
+    </svg>
+  )
+}
+
+export function TrendFlat({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 12h16" />
+    </svg>
+  )
+}
+
+export function TrendDown({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7l6 6 4-4 6 6M16 17h4v-4" />
+    </svg>
+  )
+}
+
+export function NoteIcon({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 5h16M4 10h16M4 15h10" />
+    </svg>
+  )
+}
