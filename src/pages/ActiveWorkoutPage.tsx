@@ -321,7 +321,7 @@ function ExerciseCard({
             key={s.id}
             className={
               'grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 rounded-xl p-1 ' +
-              (s.done ? 'bg-brand/10' : '')
+              (s.done ? 'bg-success/10' : '')
             }
           >
             <span className="text-center text-sm font-semibold text-neutral-500">
@@ -353,10 +353,10 @@ function ExerciseCard({
             />
             <button
               className={
-                'flex h-11 items-center justify-center rounded-xl transition-colors ' +
+                'flex h-11 items-center justify-center rounded-lg transition-colors ' +
                 (s.done
-                  ? 'bg-brand text-white'
-                  : 'bg-surface2 text-neutral-500 active:bg-line')
+                  ? 'bg-success text-bg'
+                  : 'bg-white/5 text-muted active:bg-white/10')
               }
               onClick={() => onToggle(s)}
               aria-label={s.done ? 'Satz erledigt' : 'Satz abhaken'}
