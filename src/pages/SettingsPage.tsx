@@ -17,6 +17,8 @@ export default function SettingsPage() {
   const [importInfo, setImportInfo] = useState<ImportResult | null>(null)
   const [importErr, setImportErr] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<string | null>(null)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteVal, setPasteVal] = useState('')
   const [addKind, setAddKind] = useState<'location' | 'manufacturer' | null>(null)
   const [addVal, setAddVal] = useState('')
 
@@ -30,6 +32,15 @@ export default function SettingsPage() {
     }
     reader.readAsText(file)
     e.target.value = ''
+  }
+
+  function usePastedText() {
+    const v = pasteVal.trim()
+    if (!v) return
+    setPasteOpen(false)
+    setPasteVal('')
+    setImportErr(null)
+    setPendingFile(v)
   }
 
   async function runImport(replace: boolean) {
@@ -95,13 +106,25 @@ export default function SettingsPage() {
               Exportieren
             </button>
             <button className="btn-ghost" onClick={() => fileRef.current?.click()}>
-              Importieren
+              Datei importieren
             </button>
           </div>
+          <button
+            className="btn-ghost mt-2 w-full"
+            onClick={() => { setPasteVal(''); setImportErr(null); setPasteOpen(true) }}
+          >
+            Aus Text einfügen
+          </button>
+          <p className="mt-2 text-xs text-neutral-500">
+            Cloud-Import (OneDrive, Drive …): „Datei importieren" öffnet den
+            System-Dateipicker – dort oben die Quelle wechseln. Falls die Cloud
+            dort nicht auftaucht, die Sicherung öffnen, den Inhalt kopieren und
+            hier „Aus Text einfügen".
+          </p>
           <input
             ref={fileRef}
             type="file"
-            accept="application/json,.json"
+            accept="*/*"
             className="hidden"
             onChange={onPickFile}
           />
@@ -184,6 +207,28 @@ export default function SettingsPage() {
           Gym Tracker · offline & lokal · v1.0
         </p>
       </div>
+
+      {/* Import aus Text (Cloud-Fallback) */}
+      <Sheet open={pasteOpen} onClose={() => setPasteOpen(false)} title="Sicherung aus Text">
+        <p className="mb-3 text-sm text-neutral-300">
+          Öffne die Sicherungsdatei (z. B. in OneDrive), kopiere den kompletten
+          Inhalt und füge ihn hier ein.
+        </p>
+        <textarea
+          className="input h-40 resize-none font-mono text-xs"
+          autoFocus
+          value={pasteVal}
+          placeholder='{"app":"gym-tracker", …}'
+          onChange={(e) => setPasteVal(e.target.value)}
+        />
+        <button
+          className="btn-primary mt-4 w-full"
+          disabled={!pasteVal.trim()}
+          onClick={usePastedText}
+        >
+          Weiter
+        </button>
+      </Sheet>
 
       {/* Import-Modus waehlen */}
       <Sheet open={!!pendingFile} onClose={() => setPendingFile(null)} title="Sicherung importieren">
