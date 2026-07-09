@@ -40,3 +40,13 @@ export function formatDateTime(ts: number): string {
 export function formatTime(ts: number): string {
   return timeFmt.format(new Date(ts))
 }
+
+// Voller Wochentag + Monat, nur fuer die Verlaufs-Suche (z.B. "Mittwoch Juli").
+const searchDateFmt = new Intl.DateTimeFormat('de-DE', {
+  weekday: 'long',
+  month: 'long',
+})
+
+export function formatDateSearch(ts: number): string {
+  return searchDateFmt.format(new Date(ts))
+}
