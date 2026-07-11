@@ -13,7 +13,10 @@ import type { Progression, SessionExercise, SetLog, WorkoutSession } from '../ty
 import { TopBar, Sheet, Confirm } from '../components/ui'
 import { formatDuration } from '../lib/format'
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
   CheckIcon,
+  ChevronDown,
   NoteIcon,
   PlusIcon,
   TrashIcon,
@@ -48,6 +51,10 @@ export default function ActiveWorkoutPage() {
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [addExOpen, setAddExOpen] = useState(false)
   const [newExName, setNewExName] = useState('')
+  // Welche Übungen sind aufgeklappt (Default: eingeklappt).
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const toggleExpand = (exId: string) =>
+    setExpanded((o) => ({ ...o, [exId]: !o[exId] }))
 
   // Rest-Timer (SOLL, optional)
   const [rest, setRest] = useState<{ endsAt: number } | null>(null)
@@ -142,6 +149,18 @@ export default function ActiveWorkoutPage() {
     persist({ ...session, exercises: session.exercises.filter((e) => e.id !== exId) })
   }
 
+  // Übung im Ablauf nach oben/unten schieben (z.B. Gerät besetzt).
+  function moveExercise(exId: string, dir: -1 | 1) {
+    if (!session) return
+    const list = session.exercises
+    const i = list.findIndex((e) => e.id === exId)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= list.length) return
+    const next = list.slice()
+    ;[next[i], next[j]] = [next[j], next[i]]
+    persist({ ...session, exercises: next })
+  }
+
   async function addExercise() {
     if (!session) return
     const name = newExName.trim()
@@ -207,10 +226,16 @@ export default function ActiveWorkoutPage() {
           </span>
         </div>
 
-        {session.exercises.map((ex) => (
+        {session.exercises.map((ex, i) => (
           <ExerciseCard
             key={ex.id}
             ex={ex}
+            open={!!expanded[ex.id]}
+            onToggleOpen={() => toggleExpand(ex.id)}
+            isFirst={i === 0}
+            isLast={i === session.exercises.length - 1}
+            onMoveUp={() => moveExercise(ex.id, -1)}
+            onMoveDown={() => moveExercise(ex.id, 1)}
             onToggle={(s) => toggleDone(ex.id, s)}
             onSet={(sid, patch) => setSet(ex.id, sid, patch)}
             onAddSet={() => addSet(ex.id)}
@@ -318,6 +343,12 @@ function HintBanner({ ex }: { ex: SessionExercise }) {
 
 function ExerciseCard({
   ex,
+  open,
+  onToggleOpen,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
   onToggle,
   onSet,
   onAddSet,
@@ -327,6 +358,12 @@ function ExerciseCard({
   onNextNote,
 }: {
   ex: SessionExercise
+  open: boolean
+  onToggleOpen: () => void
+  isFirst: boolean
+  isLast: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
   onToggle: (s: SetLog) => void
   onSet: (setId: string, patch: Partial<SetLog>) => void
   onAddSet: () => void
@@ -341,19 +378,65 @@ function ExerciseCard({
   const toggleNote = (id: string) =>
     setOpenNotes((o) => ({ ...o, [id]: !o[id] }))
 
+  const doneCount = ex.sets.filter((s) => s.done).length
+  const complete = ex.sets.length > 0 && doneCount === ex.sets.length
+
   return (
-    <section className="card p-3">
-      <div className="mb-2 flex items-center gap-2">
-        <h3 className="flex-1 truncate text-base font-bold">{ex.name}</h3>
+    <section className={'card p-3 ' + (complete ? 'border-success/40' : '')}>
+      {/* Kopf: antippen zum Auf-/Zuklappen */}
+      <div className="flex items-center gap-1">
         <button
-          className="p-1 text-muted active:text-brand"
-          onClick={() => setConfirmDel(true)}
-          aria-label="Übung entfernen"
+          className="flex min-w-0 flex-1 items-center gap-2 py-1 text-left"
+          onClick={onToggleOpen}
+          aria-expanded={open}
         >
-          <TrashIcon className="h-5 w-5" />
+          <ChevronDown
+            className={
+              'h-5 w-5 shrink-0 text-muted transition-transform ' +
+              (open ? '' : '-rotate-90')
+            }
+          />
+          {complete ? (
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success text-bg">
+              <CheckIcon className="h-4 w-4" />
+            </span>
+          ) : null}
+          <h3
+            className={
+              'min-w-0 flex-1 truncate text-base font-bold ' +
+              (complete ? 'text-success' : '')
+            }
+          >
+            {ex.name}
+          </h3>
+          <span
+            className={
+              'shrink-0 text-xs tabular-nums ' + (complete ? 'text-success' : 'text-muted')
+            }
+          >
+            {doneCount}/{ex.sets.length}
+          </span>
+        </button>
+        <button
+          className="p-1.5 text-muted active:text-brand disabled:opacity-25"
+          onClick={onMoveUp}
+          disabled={isFirst}
+          aria-label="Übung nach oben"
+        >
+          <ArrowUpIcon className="h-5 w-5" />
+        </button>
+        <button
+          className="p-1.5 text-muted active:text-brand disabled:opacity-25"
+          onClick={onMoveDown}
+          disabled={isLast}
+          aria-label="Übung nach unten"
+        >
+          <ArrowDownIcon className="h-5 w-5" />
         </button>
       </div>
 
+      {open ? (
+        <div className="mt-3">
       <HintBanner ex={ex} />
 
       <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 px-1 text-[11px] uppercase tracking-wide text-muted">
@@ -490,6 +573,15 @@ function ExerciseCard({
           onChange={(e) => onNextNote(e.target.value)}
         />
       </div>
+
+      <button
+        className="btn-ghost btn-sm mt-3 w-full text-muted"
+        onClick={() => setConfirmDel(true)}
+      >
+        <TrashIcon className="h-4 w-4" /> Übung entfernen
+      </button>
+        </div>
+      ) : null}
 
       <Confirm
         open={confirmDel}
