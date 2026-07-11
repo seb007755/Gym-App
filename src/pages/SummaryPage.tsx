@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { toPng } from 'html-to-image'
+import { toBlob } from 'html-to-image'
 import { db } from '../db'
 import type { SessionExercise } from '../types'
 import { TopBar, EmptyState } from '../components/ui'
@@ -63,14 +63,33 @@ export default function SummaryPage() {
     if (!cardRef.current) return
     setSaving(true)
     try {
-      const dataUrl = await toPng(cardRef.current, {
+      const blob = await toBlob(cardRef.current, {
         pixelRatio: 2,
         backgroundColor: '#0a0a0a',
       })
+      if (!blob) throw new Error('render failed')
+      const fileName = `training-${new Date(session!.date).toISOString().slice(0, 10)}.png`
+      const file = new File([blob], fileName, { type: 'image/png' })
+
+      // Mobil: Teilen-Dialog (in Fotos speichern / an Trainer schicken).
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Training' })
+          return
+        } catch (err) {
+          // Nutzer hat abgebrochen -> nichts weiter tun.
+          if (err instanceof DOMException && err.name === 'AbortError') return
+          // sonst: unten Download-Fallback versuchen.
+        }
+      }
+
+      // Fallback (Desktop): Datei herunterladen.
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `training-${new Date(session!.date).toISOString().slice(0, 10)}.png`
+      a.href = url
+      a.download = fileName
       a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
     } catch {
       alert('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
     } finally {
@@ -170,14 +189,14 @@ export default function SummaryPage() {
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <button className="btn-ghost" onClick={saveImage} disabled={saving}>
-            {saving ? 'Erstelle…' : 'Als Bild speichern'}
+            {saving ? 'Erstelle…' : 'Als Bild teilen'}
           </button>
           <button className="btn-primary" onClick={() => navigate('/')}>
             Fertig
           </button>
         </div>
         <p className="mt-3 text-center text-xs text-neutral-600">
-          Tipp: Screenshot machen und dem Trainer schicken.
+          Tipp: „Als Bild teilen" → in Fotos speichern oder direkt dem Trainer schicken.
         </p>
       </div>
     </div>
