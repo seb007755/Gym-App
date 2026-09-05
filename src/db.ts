@@ -102,6 +102,19 @@ export async function toggleActivity(ts: number, type: string): Promise<void> {
   else await db.activities.put({ id, date: start, type })
 }
 
+// Ordnet einer bereits angehakten Einheit einen Trainingstag zu (z.B. "Push"),
+// damit sie in der Trainingstag-Balance mitzaehlt statt sie zu verfaelschen.
+export async function setActivityDayName(
+  ts: number,
+  type: string,
+  dayName: string | undefined,
+): Promise<void> {
+  const id = `${dayKey(dayStart(ts))}|${type}`
+  const existing = await db.activities.get(id)
+  if (!existing) return
+  await db.activities.put({ ...existing, dayName })
+}
+
 export function locationKey(location: string): string {
   return location.trim().toLowerCase()
 }

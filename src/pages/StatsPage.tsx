@@ -6,9 +6,10 @@ import {
   dayKey,
   exKey,
   getSettings,
+  setActivityDayName,
   toggleActivity,
 } from '../db'
-import type { SessionExercise, WorkoutSession } from '../types'
+import type { Activity, SessionExercise, WorkoutSession } from '../types'
 import { TopBar, EmptyState, Sheet } from '../components/ui'
 import {
   ActivityHeatmap,
@@ -69,6 +70,15 @@ export default function StatsPage() {
   const sessions = useLiveQuery(() => db.sessions.filter((s) => s.finished).toArray(), [])
   const activities = useLiveQuery(() => db.activities.toArray(), [])
   const settings = useLiveQuery(() => getSettings(), [])
+  const plans = useLiveQuery(() => db.plans.toArray(), [])
+
+  // Bekannte Trainingstag-Namen aus den tatsaechlichen Plaenen - keine
+  // hartkodierte Push/Pull/Legs-Liste, da individuell benannt werden kann.
+  const planDayNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const p of plans ?? []) for (const d of p.days) if (d.name.trim()) names.add(d.name)
+    return [...names]
+  }, [plans])
 
   const [selected, setSelected] = useState('')
   const [showTable, setShowTable] = useState(false)
@@ -202,10 +212,16 @@ export default function StatsPage() {
       const k = s.dayName ?? 'Freies Training'
       counts.set(k, (counts.get(k) ?? 0) + 1)
     }
+    // Nicht getrackte Einheiten mit zugeordnetem Trainingstag (z.B. ein
+    // Personal-Training, das ein Push-Tag war) zaehlen mit - sonst wuerde die
+    // Balance zwischen den Tagen verfaelscht, weil sie sonst gar nicht auftauchen.
+    for (const a of activities ?? []) {
+      if (a.dayName) counts.set(a.dayName, (counts.get(a.dayName) ?? 0) + 1)
+    }
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([label, value], i) => ({ label, value, color: seriesColor(i) }))
-  }, [sessions])
+  }, [sessions, activities])
 
   // Kalender: ein Eintrag je Tag mit allen Kategorien, die stattgefunden haben.
   const heatDays = useMemo(() => {
@@ -231,10 +247,14 @@ export default function StatsPage() {
     return c
   }, [activities])
 
+  // Map statt Set, damit neben dem An/Aus-Zustand auch der zugeordnete
+  // Trainingstag (dayName) verfuegbar ist.
   const dayActivities = useMemo(() => {
-    if (dayOpen == null) return new Set<string>()
+    const map = new Map<string, Activity>()
+    if (dayOpen == null) return map
     const k = dayKey(dayOpen)
-    return new Set((activities ?? []).filter((a) => dayKey(a.date) === k).map((a) => a.type))
+    for (const a of activities ?? []) if (dayKey(a.date) === k) map.set(a.type, a)
+    return map
   }, [dayOpen, activities])
 
   const daySessions = useMemo(() => {
@@ -452,6 +472,10 @@ export default function StatsPage() {
             <section className="card">
               <h2 className="mb-3 font-bold">Trainingstage</h2>
               <BarList items={dayBalance} />
+              <p className="mt-2 text-xs text-neutral-600">
+                Enthält auch nicht getrackte Einheiten mit zugeordnetem
+                Trainingstag (im Kalender pro Tag einstellbar).
+              </p>
             </section>
           ) : null}
           </div>
@@ -493,34 +517,71 @@ export default function StatsPage() {
         <p className="label mb-2">Nicht getrackte Einheiten</p>
         <div className="space-y-2">
           {activityTypes.map((t) => {
-            const on = dayActivities.has(t)
+            const activity = dayActivities.get(t)
+            const on = !!activity
             return (
-              <button
-                key={t}
-                className={
-                  'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left ' +
-                  (on ? 'bg-brand/10 text-brand' : 'bg-surface2')
-                }
-                onClick={() => dayOpen != null && void toggleActivity(dayOpen, t)}
-                aria-pressed={on}
-              >
-                <span
+              <div key={t}>
+                <button
                   className={
-                    'flex h-5 w-5 shrink-0 items-center justify-center rounded border ' +
-                    (on ? 'border-brand bg-brand text-white' : 'border-line')
+                    'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left ' +
+                    (on ? 'bg-brand/10 text-brand' : 'bg-surface2')
                   }
+                  onClick={() => dayOpen != null && void toggleActivity(dayOpen, t)}
+                  aria-pressed={on}
                 >
-                  {on ? <CheckIcon className="h-3.5 w-3.5" /> : null}
-                </span>
-                <span className="flex-1 text-sm">{t}</span>
-                <span
-                  className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={{ background: colorOf(t) }}
-                />
-              </button>
+                  <span
+                    className={
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded border ' +
+                      (on ? 'border-brand bg-brand text-white' : 'border-line')
+                    }
+                  >
+                    {on ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <span className="flex-1 text-sm">{t}</span>
+                  <span
+                    className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ background: colorOf(t) }}
+                  />
+                </button>
+
+                {/* Trainingstag zuordnen - sonst fehlt diese Einheit in der
+                    Trainingstag-Balance unten bzw. verfaelscht sie. */}
+                {on && planDayNames.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5 pl-1">
+                    {planDayNames.map((d) => {
+                      const active = activity!.dayName === d
+                      return (
+                        <button
+                          key={d}
+                          className={
+                            'rounded-md border px-2.5 py-1 text-xs font-medium ' +
+                            (active
+                              ? 'border-brand bg-brand/15 text-brand'
+                              : 'border-line text-muted active:bg-white/10')
+                          }
+                          onClick={() =>
+                            dayOpen != null &&
+                            void setActivityDayName(dayOpen, t, active ? undefined : d)
+                          }
+                          aria-pressed={active}
+                        >
+                          {d}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+              </div>
             )
           })}
         </div>
+        {activityTypes.some((t) => dayActivities.has(t)) && planDayNames.length > 0 ? (
+          <p className="mt-2 text-xs text-neutral-600">
+            Trainingstag zuordnen (optional), z. B. wenn ein Personal-Training
+            einem Push-/Pull-/Legs-Tag entsprach – zählt sonst nicht in der
+            Trainingstag-Balance mit.
+          </p>
+        ) : null}
         {activityTypes.length === 0 ? (
           <p className="text-sm text-muted">
             Keine Typen angelegt – unter Einstellungen → Weitere Einheiten hinzufügen.

@@ -105,6 +105,10 @@ export interface Activity {
   date: number // lokale Mitternacht
   type: string
   note?: string
+  // Welchem Trainingstag (z.B. "Push") diese Einheit entsprach - optional,
+  // aus den Namen vorhandener Plan-Tage gewaehlt. Ohne das wuerde z.B. ein
+  // Personal-Training als Push-Tag in der Trainingstag-Balance fehlen.
+  dayName?: string
 }
 
 export interface AppSettings {
