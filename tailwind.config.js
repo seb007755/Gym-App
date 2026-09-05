@@ -14,6 +14,7 @@ export default {
         brand: '#FF3B30', // Active Red (--accent-primary)
         brandDark: '#D73229', // Darker red hover/active (--accent-hover)
         success: '#30D158', // Completed sets (--status-success)
+        warn: '#FF9F0A', // Neuer Hersteller: Gewicht neu kalibrieren
         ink: '#E6EDF3', // High-contrast text (--text-primary)
         muted: '#8B949E', // Labels / units (--text-secondary)
       },

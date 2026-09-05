@@ -61,6 +61,15 @@ export function CogIcon({ className }: P) {
   )
 }
 
+export function ChartIcon({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" />
+      <path d="M7 15v-3M12 15V8M17 15v-6" />
+    </svg>
+  )
+}
+
 export function PlusIcon({ className }: P) {
   return (
     <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useLiveQuery } from 'dexie-react-hooks'
 import {
+  DEFAULT_REST_SECONDS,
+  buildAdHocExercise,
   db,
   discardSession,
   finishSession,
   getActiveSession,
+  getSettings,
   newSet,
-  uid,
+  shrinkSetTemplate,
   upsertExerciseByName,
 } from '../db'
 import type { Progression, SessionExercise, SetLog, WorkoutSession } from '../types'
@@ -47,8 +51,18 @@ export default function ActiveWorkoutPage() {
   const [loading, setLoading] = useState(true)
   const elapsed = useElapsed(session?.startTime)
 
+  const settings = useLiveQuery(() => getSettings(), [])
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  // Regel B: gezielt einen vorbefuellten Satz entfernen.
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    exId: string
+    setId: string
+  } | null>(null)
+  // Regel B: Sammel-Dialog beim Beenden fuer offene Saetze.
+  const [openSetsChoice, setOpenSetsChoice] = useState<
+    Record<string, 'once' | 'permanent'> | null
+  >(null)
   const [addExOpen, setAddExOpen] = useState(false)
   const [newExName, setNewExName] = useState('')
   // Welche Übungen sind aufgeklappt (Default: eingeklappt).
@@ -59,7 +73,8 @@ export default function ActiveWorkoutPage() {
   // Rest-Timer (SOLL, optional)
   const [rest, setRest] = useState<{ endsAt: number } | null>(null)
   const [restLeft, setRestLeft] = useState(0)
-  const restDur = useRef(90)
+  const restDur = useRef(DEFAULT_REST_SECONDS)
+  restDur.current = settings?.restSeconds ?? DEFAULT_REST_SECONDS
 
   useEffect(() => {
     let cancelled = false
@@ -140,6 +155,24 @@ export default function ActiveWorkoutPage() {
     }))
   }
 
+  // Regel B: bei Plan-Uebungen erst fragen, ob das Ziel-Volumen mitwandert.
+  function requestRemoveSet(exId: string, setId: string) {
+    const ex = session?.exercises.find((e) => e.id === exId)
+    if (ex?.planExerciseId) setPendingRemoval({ exId, setId })
+    else removeSet(exId, setId)
+  }
+
+  async function confirmRemoveSet(permanent: boolean) {
+    if (!session || !pendingRemoval) return
+    const ex = session.exercises.find((e) => e.id === pendingRemoval.exId)
+    setPendingRemoval(null)
+    if (!ex) return
+    removeSet(pendingRemoval.exId, pendingRemoval.setId)
+    if (permanent && ex.planExerciseId) {
+      await shrinkSetTemplate(session, ex.planExerciseId, ex.sets.length - 1)
+    }
+  }
+
   function setExerciseField(exId: string, patch: Partial<SessionExercise>) {
     mutateExercise(exId, (ex) => ({ ...ex, ...patch }))
   }
@@ -166,21 +199,63 @@ export default function ActiveWorkoutPage() {
     const name = newExName.trim()
     if (!name) return
     const exerciseId = await upsertExerciseByName(name)
-    const ex: SessionExercise = {
-      id: uid(),
-      exerciseId,
+    // Auch nachtraeglich ergaenzte Uebungen folgen der Wasserfall-Vorbelegung.
+    const ex = await buildAdHocExercise(
       name,
-      sets: [newSet()],
-    }
+      exerciseId,
+      session.location,
+      session.equipmentManufacturer,
+    )
     persist({ ...session, exercises: [...session.exercises, ex] })
     setNewExName('')
     setAddExOpen(false)
   }
 
-  async function doFinish() {
+  // Plan-Uebungen, bei denen Saetze offen geblieben sind (aber nicht komplett
+  // uebersprungen wurden) -> Sammel-Dialog nach Regel B.
+  function exercisesWithOpenSets(s: WorkoutSession): SessionExercise[] {
+    return s.exercises.filter((e) => {
+      if (!e.planExerciseId) return false
+      const done = e.sets.filter((x) => x.done).length
+      return done > 0 && done < e.sets.length
+    })
+  }
+
+  function requestFinish() {
     if (!session) return
-    await finishSession(session.id)
-    navigate(`/summary/${session.id}`, { replace: true })
+    const open = exercisesWithOpenSets(session)
+    if (open.length === 0) {
+      setConfirmFinish(true)
+      return
+    }
+    setOpenSetsChoice(Object.fromEntries(open.map((e) => [e.id, 'once'])))
+  }
+
+  async function doFinish(choices?: Record<string, 'once' | 'permanent'>) {
+    if (!session) return
+    let next = session
+    if (choices) {
+      const affected = new Set(Object.keys(choices))
+      // Nicht abgehakte Saetze wandern nicht in die Historie.
+      next = {
+        ...session,
+        exercises: session.exercises.map((e) =>
+          affected.has(e.id) ? { ...e, sets: e.sets.filter((s) => s.done) } : e,
+        ),
+      }
+      await db.sessions.put(next)
+      for (const e of session.exercises) {
+        if (choices[e.id] !== 'permanent' || !e.planExerciseId) continue
+        await shrinkSetTemplate(
+          session,
+          e.planExerciseId,
+          e.sets.filter((s) => s.done).length,
+        )
+      }
+    }
+    setOpenSetsChoice(null)
+    await finishSession(next.id)
+    navigate(`/summary/${next.id}`, { replace: true })
   }
 
   async function doDiscard() {
@@ -239,7 +314,7 @@ export default function ActiveWorkoutPage() {
             onToggle={(s) => toggleDone(ex.id, s)}
             onSet={(sid, patch) => setSet(ex.id, sid, patch)}
             onAddSet={() => addSet(ex.id)}
-            onRemoveSet={(sid) => removeSet(ex.id, sid)}
+            onRemoveSet={(sid) => requestRemoveSet(ex.id, sid)}
             onRemoveExercise={() => removeExercise(ex.id)}
             onProgression={(p) => setExerciseField(ex.id, { progression: p })}
             onNextNote={(t) => setExerciseField(ex.id, { nextNote: t })}
@@ -254,7 +329,7 @@ export default function ActiveWorkoutPage() {
           <button className="btn-ghost" onClick={() => setConfirmDiscard(true)}>
             Verwerfen
           </button>
-          <button className="btn-primary" onClick={() => setConfirmFinish(true)}>
+          <button className="btn-primary" onClick={requestFinish}>
             Beenden
           </button>
         </div>
@@ -296,13 +371,109 @@ export default function ActiveWorkoutPage() {
         </button>
       </Sheet>
 
+      {/* Regel B: einzelnen Satz entfernen */}
+      <Sheet
+        open={!!pendingRemoval}
+        onClose={() => setPendingRemoval(null)}
+        title="Soll dieser Satz dauerhaft entfernt werden?"
+      >
+        <p className="mb-4 text-sm text-neutral-300">
+          „Einmalig" lässt dein Ziel-Volumen unverändert – beim nächsten Mal wird
+          der Satz wieder vorbefüllt. „Dauerhaft" korrigiert den Trainingsplan
+          nach unten.
+        </p>
+        <div className="space-y-2">
+          <button
+            className="btn-ghost w-full"
+            onClick={() => void confirmRemoveSet(false)}
+          >
+            Einmalig
+          </button>
+          <button
+            className="btn-primary w-full"
+            onClick={() => void confirmRemoveSet(true)}
+          >
+            Dauerhaft entfernen
+          </button>
+        </div>
+      </Sheet>
+
+      {/* Regel B: Sammel-Dialog beim Beenden */}
+      <Sheet
+        open={!!openSetsChoice}
+        onClose={() => setOpenSetsChoice(null)}
+        title="Offene Sätze"
+      >
+        <p className="mb-4 text-sm text-neutral-300">
+          Bei diesen Übungen sind Sätze offen geblieben. Sollen sie dauerhaft aus
+          dem Ziel-Volumen verschwinden?
+        </p>
+        <ul className="space-y-3">
+          {openSetsChoice
+            ? session.exercises
+                .filter((e) => e.id in openSetsChoice)
+                .map((e) => {
+                  const done = e.sets.filter((s) => s.done).length
+                  const choice = openSetsChoice[e.id]
+                  return (
+                    <li key={e.id}>
+                      <p className="mb-1.5 text-sm font-semibold">
+                        {e.name}{' '}
+                        <span className="font-normal text-muted tabular-nums">
+                          {done} statt {e.sets.length} Sätze
+                        </span>
+                      </p>
+                      <div className="flex gap-2">
+                        {(['once', 'permanent'] as const).map((c) => (
+                          <button
+                            key={c}
+                            className={
+                              'chip flex-1 justify-center py-2 ' +
+                              (choice === c ? 'chip-active' : '')
+                            }
+                            onClick={() =>
+                              setOpenSetsChoice((o) => ({ ...o, [e.id]: c }))
+                            }
+                            aria-pressed={choice === c}
+                          >
+                            {c === 'once' ? 'Einmalig' : 'Dauerhaft'}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  )
+                })
+            : null}
+        </ul>
+        <div className="mt-5 space-y-2">
+          <button
+            className="btn-primary w-full"
+            onClick={() => void doFinish(openSetsChoice ?? undefined)}
+          >
+            Training beenden
+          </button>
+          <button
+            className="btn-ghost w-full"
+            onClick={() =>
+              void doFinish(
+                Object.fromEntries(
+                  Object.keys(openSetsChoice ?? {}).map((k) => [k, 'once']),
+                ),
+              )
+            }
+          >
+            Alle einmalig
+          </button>
+        </div>
+      </Sheet>
+
       <Confirm
         open={confirmFinish}
         title="Training beenden?"
         message="Die Zusammenfassung wird erstellt. Nicht abgehakte Sätze werden nicht gezählt."
         confirmLabel="Beenden"
         danger={false}
-        onConfirm={doFinish}
+        onConfirm={() => void doFinish()}
         onCancel={() => setConfirmFinish(false)}
       />
       <Confirm
@@ -380,6 +551,8 @@ function ExerciseCard({
 
   const doneCount = ex.sets.filter((s) => s.done).length
   const complete = ex.sets.length > 0 && doneCount === ex.sets.length
+  // Prio 3 der Wasserfall-Logik: Werte stammen von einem anderen Hersteller.
+  const needsCalibration = ex.prefillTier === 'other' && !!ex.prefillManufacturer
 
   return (
     <section className={'card p-3 ' + (complete ? 'border-success/40' : '')}>
@@ -409,6 +582,11 @@ function ExerciseCard({
           >
             {ex.name}
           </h3>
+          {needsCalibration && !open ? (
+            <span className="shrink-0 rounded bg-warn/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-warn">
+              Neuer Hersteller
+            </span>
+          ) : null}
           <span
             className={
               'shrink-0 text-xs tabular-nums ' + (complete ? 'text-success' : 'text-muted')
@@ -437,6 +615,13 @@ function ExerciseCard({
 
       {open ? (
         <div className="mt-3">
+      {needsCalibration ? (
+        <div className="mb-2 rounded-lg border border-warn/40 bg-warn/10 px-2.5 py-2 text-xs text-warn">
+          <span className="font-semibold">Neuer Hersteller</span> – Gewicht muss
+          ggf. neu kalibriert werden. Werte stammen von{' '}
+          <span className="font-semibold">{ex.prefillManufacturer}</span>.
+        </div>
+      ) : null}
       <HintBanner ex={ex} />
 
       <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 px-1 text-[11px] uppercase tracking-wide text-muted">
@@ -460,7 +645,10 @@ function ExerciseCard({
                   {i + 1}
                 </span>
                 <input
-                  className="input px-2 py-2.5 text-center text-lg"
+                  className={
+                    'input px-2 py-2.5 text-center text-lg ' +
+                    (needsCalibration ? 'border-warn text-warn' : '')
+                  }
                   type="number"
                   inputMode="decimal"
                   placeholder="–"

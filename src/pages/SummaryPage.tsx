@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { toBlob } from 'html-to-image'
 import { db } from '../db'
+import { shareNodeAsImage } from '../lib/shareImage'
 import type { SessionExercise } from '../types'
 import { TopBar, EmptyState } from '../components/ui'
 import { formatDateTime, formatDurationLong } from '../lib/format'
@@ -62,39 +62,12 @@ export default function SummaryPage() {
   async function saveImage() {
     if (!cardRef.current) return
     setSaving(true)
-    try {
-      const blob = await toBlob(cardRef.current, {
-        pixelRatio: 2,
-        backgroundColor: '#0a0a0a',
-      })
-      if (!blob) throw new Error('render failed')
-      const fileName = `training-${new Date(session!.date).toISOString().slice(0, 10)}.png`
-      const file = new File([blob], fileName, { type: 'image/png' })
-
-      // Mobil: Teilen-Dialog (in Fotos speichern / an Trainer schicken).
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: 'Training' })
-          return
-        } catch (err) {
-          // Nutzer hat abgebrochen -> nichts weiter tun.
-          if (err instanceof DOMException && err.name === 'AbortError') return
-          // sonst: unten Download-Fallback versuchen.
-        }
-      }
-
-      // Fallback (Desktop): Datei herunterladen.
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10000)
-    } catch {
+    const name = `training-${new Date(session!.date).toISOString().slice(0, 10)}.png`
+    const res = await shareNodeAsImage(cardRef.current, name, 'Training')
+    if (res === 'failed') {
       alert('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
-    } finally {
-      setSaving(false)
     }
+    setSaving(false)
   }
 
   return (
@@ -134,6 +107,12 @@ export default function SummaryPage() {
             <div>
               <dt className="text-neutral-500">Hersteller</dt>
               <dd className="font-medium">{session.equipmentManufacturer || '—'}</dd>
+            </div>
+            <div>
+              <dt className="text-neutral-500">Kalorien</dt>
+              <dd className="font-medium tabular-nums">
+                {session.calories != null ? `${session.calories} kcal` : '—'}
+              </dd>
             </div>
           </dl>
 

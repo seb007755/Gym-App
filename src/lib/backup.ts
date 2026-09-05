@@ -1,13 +1,14 @@
-import { db, getSettings } from '../db'
+import { db, getSettings, runMigrations } from '../db'
 import type { BackupFile } from '../types'
 
-const BACKUP_VERSION = 1
+const BACKUP_VERSION = 3
 
 export async function exportBackup(): Promise<BackupFile> {
-  const [exercises, plans, sessions, settings] = await Promise.all([
+  const [exercises, plans, sessions, activities, settings] = await Promise.all([
     db.exercises.toArray(),
     db.plans.toArray(),
     db.sessions.toArray(),
+    db.activities.toArray(),
     getSettings(),
   ])
   return {
@@ -17,6 +18,7 @@ export async function exportBackup(): Promise<BackupFile> {
     exercises,
     plans,
     sessions,
+    activities,
     settings,
   }
 }
@@ -64,6 +66,7 @@ export async function importBackup(
     db.exercises,
     db.plans,
     db.sessions,
+    db.activities,
     db.settings,
     async () => {
       if (replace) {
@@ -71,14 +74,20 @@ export async function importBackup(
           db.exercises.clear(),
           db.plans.clear(),
           db.sessions.clear(),
+          db.activities.clear(),
         ])
       }
       if (data.exercises?.length) await db.exercises.bulkPut(data.exercises)
       if (data.plans?.length) await db.plans.bulkPut(data.plans)
       if (data.sessions?.length) await db.sessions.bulkPut(data.sessions)
+      // Erst ab Backup v3 vorhanden - aeltere Sicherungen haben das Feld nicht.
+      if (data.activities?.length) await db.activities.bulkPut(data.activities)
       if (data.settings) await db.settings.put(data.settings)
     },
   )
+
+  // Aeltere Sicherungen (v1) kennen weder kcal noch Hersteller je Ort.
+  await runMigrations(true)
 
   return {
     exercises: data.exercises?.length ?? 0,

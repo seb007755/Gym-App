@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getActiveSession, getSettings, startSession } from '../db'
+import {
+  db,
+  getActiveSession,
+  getSettings,
+  manufacturerForLocation,
+  startSession,
+  upsertExerciseByName,
+} from '../db'
 import type { Plan } from '../types'
-import { TopBar, EmptyState } from '../components/ui'
+import { TopBar, EmptyState, Sheet } from '../components/ui'
 import { formatDate } from '../lib/format'
-import { PlayIcon, DumbbellIcon } from '../components/icons'
+import { PlayIcon, DumbbellIcon, PlusIcon, CheckIcon } from '../components/icons'
 
 export default function StartPage() {
   const navigate = useNavigate()
@@ -19,13 +26,25 @@ export default function StartPage() {
   const [manufacturer, setManufacturer] = useState('')
   const [freeMode, setFreeMode] = useState(false)
   const [addingLocation, setAddingLocation] = useState(false)
+  const [picked, setPicked] = useState<Record<string, boolean>>({})
+  const [addExOpen, setAddExOpen] = useState(false)
+  const [newExName, setNewExName] = useState('')
 
-  // Ort/Hersteller mit zuletzt genutzten Werten vorbelegen.
+  const allExercises = useLiveQuery(
+    () => db.exercises.orderBy('name').toArray(),
+    [],
+  )
+
+  // Ort mit dem zuletzt genutzten Wert vorbelegen.
   useEffect(() => {
     if (!settings) return
     setLocation((l) => l || settings.lastLocation)
-    setManufacturer((m) => m || settings.lastManufacturer)
   }, [settings])
+
+  // Der Hersteller haengt am Ort: bei bekannten Orten fest, sonst waehlbar.
+  const boundManufacturer = settings ? manufacturerForLocation(settings, location) : ''
+  const locationIsKnown = !!boundManufacturer
+  const effectiveManufacturer = locationIsKnown ? boundManufacturer : manufacturer
 
   // ersten Plan/Tag vorwaehlen
   useEffect(() => {
@@ -46,23 +65,39 @@ export default function StartPage() {
     }
   }, [selectedPlan, dayId])
 
+  async function addNewExercise() {
+    const name = newExName.trim()
+    if (!name) return
+    // Landet in der Uebungs-Datenbank, aber in keinem Trainingsplan.
+    const id = await upsertExerciseByName(name)
+    setPicked((p) => ({ ...p, [id]: true }))
+    setNewExName('')
+    setAddExOpen(false)
+  }
+
   async function start() {
     if (freeMode) {
-      const s = await startSession({ location, manufacturer })
-      void s
+      await startSession({
+        location,
+        manufacturer: effectiveManufacturer,
+        adHocExercises: (allExercises ?? [])
+          .filter((e) => picked[e.id])
+          .map((e) => ({ name: e.name, exerciseId: e.id })),
+      })
     } else {
       if (!selectedPlan || !dayId) return
       await startSession({
         plan: selectedPlan,
         planDayId: dayId,
         location,
-        manufacturer,
+        manufacturer: effectiveManufacturer,
       })
     }
     navigate('/workout')
   }
 
-  const canStart = (freeMode || (selectedPlan && dayId)) && manufacturer.trim() !== ''
+  const canStart =
+    (freeMode || (selectedPlan && dayId)) && effectiveManufacturer.trim() !== ''
 
   return (
     <div>
@@ -217,31 +252,104 @@ export default function StartPage() {
               <label className="label mt-4">
                 Geräte-Hersteller
                 <span className="ml-1 font-normal text-neutral-600">
-                  (pro Training)
+                  (pro Ort)
                 </span>
               </label>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {settings?.manufacturers.map((m) => (
-                  <button
-                    key={m}
-                    className={'chip ' + (m === manufacturer ? 'chip-active' : '')}
-                    onClick={() => setManufacturer(m)}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-              <input
-                className="input"
-                placeholder="Anderer Hersteller…"
-                value={manufacturer}
-                onChange={(e) => setManufacturer(e.target.value)}
-              />
-              <p className="mt-2 text-xs text-neutral-600">
-                Gewichte variieren je Hersteller – der Tag macht spätere Vergleiche
-                interpretierbar.
-              </p>
+              {locationIsKnown ? (
+                <>
+                  <p className="rounded-lg bg-surface2 px-3 py-2.5 font-semibold">
+                    {boundManufacturer}
+                  </p>
+                  <p className="mt-1.5 text-xs text-muted">
+                    Für diesen Ort festgelegt. Änderung nur unter Einstellungen →
+                    Orte.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {settings?.manufacturers.map((m) => (
+                      <button
+                        key={m}
+                        className={'chip ' + (m === manufacturer ? 'chip-active' : '')}
+                        onClick={() => setManufacturer(m)}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    className="input"
+                    placeholder="Anderer Hersteller…"
+                    value={manufacturer}
+                    onChange={(e) => setManufacturer(e.target.value)}
+                  />
+                  <p className="mt-2 text-xs text-neutral-600">
+                    Wird einmalig für diesen Ort gespeichert – danach nur noch in
+                    den Einstellungen änderbar.
+                  </p>
+                </>
+              )}
             </section>
+
+            {/* Freies Training: Uebungen auswaehlen */}
+            {freeMode ? (
+              <section className="card">
+                <h2 className="mb-1 font-bold">Übungen</h2>
+                <p className="mb-3 text-xs text-muted">
+                  Wähle aus, was du heute machen willst. Weitere Übungen kannst du
+                  auch während des Trainings ergänzen.
+                </p>
+                {allExercises && allExercises.length > 0 ? (
+                  <ul className="space-y-1">
+                    {allExercises.map((e) => {
+                      const on = !!picked[e.id]
+                      return (
+                        <li key={e.id}>
+                          <button
+                            className={
+                              'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left ' +
+                              (on ? 'bg-brand/10 text-brand' : 'bg-surface2')
+                            }
+                            onClick={() =>
+                              setPicked((p) => ({ ...p, [e.id]: !p[e.id] }))
+                            }
+                            aria-pressed={on}
+                          >
+                            <span
+                              className={
+                                'flex h-5 w-5 shrink-0 items-center justify-center rounded border ' +
+                                (on
+                                  ? 'border-brand bg-brand text-white'
+                                  : 'border-line')
+                              }
+                            >
+                              {on ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm">
+                              {e.name}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-neutral-500">
+                    Noch keine Übungen bekannt – ergänze deine erste.
+                  </p>
+                )}
+                <button
+                  className="btn-ghost mt-2 w-full"
+                  onClick={() => {
+                    setNewExName('')
+                    setAddExOpen(true)
+                  }}
+                >
+                  <PlusIcon className="h-5 w-5" /> Übung ergänzen
+                </button>
+              </section>
+            ) : null}
 
             <button
               className="btn-primary w-full py-4 text-lg"
@@ -250,7 +358,7 @@ export default function StartPage() {
             >
               <PlayIcon className="h-5 w-5" /> Training starten
             </button>
-            {!manufacturer.trim() ? (
+            {!effectiveManufacturer.trim() ? (
               <p className="text-center text-xs text-neutral-500">
                 Bitte einen Hersteller wählen.
               </p>
@@ -258,6 +366,29 @@ export default function StartPage() {
           </>
         )}
       </div>
+
+      {/* Neue Uebung anlegen (nur Stammdaten, kein Plan) */}
+      <Sheet open={addExOpen} onClose={() => setAddExOpen(false)} title="Übung ergänzen">
+        <input
+          className="input"
+          autoFocus
+          placeholder="Name der Übung"
+          value={newExName}
+          onChange={(e) => setNewExName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addNewExercise()}
+        />
+        <p className="mt-2 text-xs text-neutral-600">
+          Wird als verfügbare Übung gespeichert, aber keinem Trainingsplan
+          hinzugefügt.
+        </p>
+        <button
+          className="btn-primary mt-4 w-full"
+          disabled={!newExName.trim()}
+          onClick={addNewExercise}
+        >
+          Hinzufügen
+        </button>
+      </Sheet>
     </div>
   )
 }

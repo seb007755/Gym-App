@@ -1,6 +1,23 @@
 import { useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, getSettings, saveSettings } from '../db'
+import {
+  DEFAULT_ACTIVITY_TYPES,
+  DEFAULT_REST_SECONDS,
+  db,
+  getSettings,
+  locationKey,
+  manufacturerForLocation,
+  saveSettings,
+  setLocationManufacturer,
+} from '../db'
+import {
+  DEFAULT_BODY_WEIGHT_KG,
+  DEFAULT_MET,
+  MET_MAX,
+  MET_MIN,
+  MET_STEP,
+  metLabel,
+} from '../lib/calories'
 import { downloadBackup, importBackup, type ImportResult } from '../lib/backup'
 import { TopBar, Sheet } from '../components/ui'
 import { PlusIcon, TrashIcon } from '../components/icons'
@@ -19,8 +36,16 @@ export default function SettingsPage() {
   const [pendingFile, setPendingFile] = useState<string | null>(null)
   const [pasteOpen, setPasteOpen] = useState(false)
   const [pasteVal, setPasteVal] = useState('')
-  const [addKind, setAddKind] = useState<'location' | 'manufacturer' | null>(null)
+  const [addKind, setAddKind] = useState<'location' | 'manufacturer' | 'activity' | null>(null)
   const [addVal, setAddVal] = useState('')
+  // Ort, dessen Hersteller gerade geaendert wird (einziger Weg zur Aenderung).
+  const [editLoc, setEditLoc] = useState<string | null>(null)
+  const [editLocVal, setEditLocVal] = useState('')
+
+  const activityTypes = settings?.activityTypes ?? DEFAULT_ACTIVITY_TYPES
+  const restSeconds = settings?.restSeconds ?? DEFAULT_REST_SECONDS
+  const bodyWeightKg = settings?.bodyWeightKg ?? DEFAULT_BODY_WEIGHT_KG
+  const metValue = settings?.metValue ?? DEFAULT_MET
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -63,6 +88,10 @@ export default function SettingsPage() {
       if (!settings.locations.includes(v)) {
         await saveSettings({ locations: [...settings.locations, v] })
       }
+    } else if (addKind === 'activity') {
+      if (!activityTypes.includes(v)) {
+        await saveSettings({ activityTypes: [...activityTypes, v] })
+      }
     } else {
       if (!settings.manufacturers.includes(v)) {
         await saveSettings({ manufacturers: [...settings.manufacturers, v] })
@@ -72,9 +101,28 @@ export default function SettingsPage() {
     setAddKind(null)
   }
 
+  async function removeActivityType(t: string) {
+    // Bereits eingetragene Tage bleiben erhalten - nur der Typ verschwindet
+    // aus der Auswahl.
+    await saveSettings({ activityTypes: activityTypes.filter((x) => x !== t) })
+  }
+
   async function removeLocation(l: string) {
     if (!settings) return
-    await saveSettings({ locations: settings.locations.filter((x) => x !== l) })
+    const map = { ...(settings.locationManufacturers ?? {}) }
+    delete map[locationKey(l)]
+    await saveSettings({
+      locations: settings.locations.filter((x) => x !== l),
+      locationManufacturers: map,
+    })
+  }
+
+  async function saveLocManufacturer() {
+    if (!editLoc) return
+    const v = editLocVal.trim()
+    if (!v) return
+    await setLocationManufacturer(editLoc, v)
+    setEditLoc(null)
   }
   async function removeManufacturer(m: string) {
     if (!settings) return
@@ -95,6 +143,83 @@ export default function SettingsPage() {
             <strong>JSON-Export ist die einzige Sicherung</strong> – exportiere
             regelmäßig, sonst gehen die Daten beim Löschen der Browserdaten oder
             Gerätewechsel verloren.
+          </p>
+        </section>
+
+        {/* Training */}
+        <section className="card">
+          <h2 className="mb-3 font-bold">Training</h2>
+
+          <label className="label" htmlFor="rest">
+            Pausen-Timer
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="rest"
+              className="input flex-1"
+              type="number"
+              inputMode="numeric"
+              min={10}
+              max={600}
+              step={5}
+              value={restSeconds}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10)
+                if (Number.isFinite(n)) void saveSettings({ restSeconds: n })
+              }}
+            />
+            <span className="text-sm text-muted">Sekunden</span>
+          </div>
+          <p className="mt-1.5 text-xs text-muted">
+            Läuft automatisch los, sobald du einen Satz abhakst.
+          </p>
+
+          <label className="label mt-4" htmlFor="weight">
+            Körpergewicht
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="weight"
+              className="input flex-1"
+              type="number"
+              inputMode="decimal"
+              min={30}
+              max={300}
+              step={0.5}
+              value={bodyWeightKg}
+              onChange={(e) => {
+                const n = parseFloat(e.target.value.replace(',', '.'))
+                if (Number.isFinite(n)) void saveSettings({ bodyWeightKg: n })
+              }}
+            />
+            <span className="text-sm text-muted">kg</span>
+          </div>
+
+          <div className="mt-4 flex items-baseline justify-between">
+            <label className="label" htmlFor="met">
+              MET-Wert
+            </label>
+            <span className="font-semibold tabular-nums">
+              {metValue.toFixed(1)}
+            </span>
+          </div>
+          <input
+            id="met"
+            className="w-full accent-brand"
+            type="range"
+            min={MET_MIN}
+            max={MET_MAX}
+            step={MET_STEP}
+            value={metValue}
+            onChange={(e) =>
+              void saveSettings({ metValue: parseFloat(e.target.value) })
+            }
+          />
+          <p className="mt-1 text-xs text-muted">{metLabel(metValue)}</p>
+          <p className="mt-3 text-xs text-neutral-600">
+            Kalorien = MET × Körpergewicht × Dauer in Stunden. Der Wert wird beim
+            Beenden eines Trainings festgeschrieben – Änderungen hier gelten nur
+            für zukünftige Trainings.
           </p>
         </section>
 
@@ -153,12 +278,72 @@ export default function SettingsPage() {
           </div>
           {settings && settings.locations.length > 0 ? (
             <ul className="space-y-1">
-              {settings.locations.map((l) => (
-                <li key={l} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
-                  <span className="flex-1 truncate text-sm">{l}</span>
+              {settings.locations.map((l) => {
+                const m = manufacturerForLocation(settings, l)
+                return (
+                  <li key={l} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
+                    <button
+                      className="min-w-0 flex-1 text-left"
+                      onClick={() => {
+                        setEditLoc(l)
+                        setEditLocVal(m)
+                      }}
+                    >
+                      <span className="block truncate text-sm">{l}</span>
+                      <span
+                        className={
+                          'block truncate text-xs ' +
+                          (m ? 'text-muted' : 'text-warn')
+                        }
+                      >
+                        {m || 'Kein Hersteller – zum Festlegen tippen'}
+                      </span>
+                    </button>
+                    <button
+                      className="p-1 text-neutral-500 active:text-red-400"
+                      onClick={() => removeLocation(l)}
+                      aria-label="Entfernen"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500">
+              Noch keine Orte – werden beim Training automatisch gemerkt.
+            </p>
+          )}
+          <p className="mt-2 text-xs text-neutral-600">
+            Der Geräte-Hersteller wird einmalig beim Anlegen eines Ortes gesetzt.
+            Hier ist der einzige Weg, ihn nachträglich zu ändern.
+          </p>
+        </section>
+
+        {/* Nicht getrackte Einheiten */}
+        <section className="card">
+          <div className="mb-1 flex items-center gap-2">
+            <h2 className="flex-1 font-bold">Weitere Einheiten</h2>
+            <button
+              className="btn-ghost btn-sm h-9 w-9 rounded-full p-0"
+              onClick={() => { setAddKind('activity'); setAddVal('') }}
+              aria-label="Einheit hinzufügen"
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="mb-3 text-xs text-muted">
+            Einheiten, die du nicht mitträgst, aber im Kalender abhaken willst.
+          </p>
+          {activityTypes.length > 0 ? (
+            <ul className="space-y-1">
+              {activityTypes.map((t) => (
+                <li key={t} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
+                  <span className="flex-1 truncate text-sm">{t}</span>
                   <button
                     className="p-1 text-neutral-500 active:text-red-400"
-                    onClick={() => removeLocation(l)}
+                    onClick={() => removeActivityType(t)}
                     aria-label="Entfernen"
                   >
                     <TrashIcon className="h-4 w-4" />
@@ -167,9 +352,7 @@ export default function SettingsPage() {
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-neutral-500">
-              Noch keine Orte – werden beim Training automatisch gemerkt.
-            </p>
+            <p className="text-sm text-neutral-500">Keine Typen angelegt.</p>
           )}
         </section>
 
@@ -259,17 +442,66 @@ export default function SettingsPage() {
         </button>
       </Sheet>
 
+      {/* Hersteller eines Ortes aendern */}
+      <Sheet
+        open={!!editLoc}
+        onClose={() => setEditLoc(null)}
+        title={editLoc ? `Hersteller für ${editLoc}` : ''}
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          {settings?.manufacturers.map((m) => (
+            <button
+              key={m}
+              className={'chip ' + (m === editLocVal ? 'chip-active' : '')}
+              onClick={() => setEditLocVal(m)}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <input
+          className="input"
+          value={editLocVal}
+          placeholder="Anderer Hersteller…"
+          onChange={(e) => setEditLocVal(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && saveLocManufacturer()}
+        />
+        <p className="mt-2 text-xs text-neutral-600">
+          Gilt für alle Geräte an diesem Ort. Bereits gespeicherte Trainings
+          bleiben unverändert.
+        </p>
+        <button
+          className="btn-primary mt-4 w-full"
+          disabled={!editLocVal.trim()}
+          onClick={saveLocManufacturer}
+        >
+          Speichern
+        </button>
+      </Sheet>
+
       {/* Wert hinzufuegen */}
       <Sheet
         open={!!addKind}
         onClose={() => setAddKind(null)}
-        title={addKind === 'location' ? 'Ort hinzufügen' : 'Hersteller hinzufügen'}
+        title={
+          addKind === 'location'
+            ? 'Ort hinzufügen'
+            : addKind === 'activity'
+              ? 'Einheit hinzufügen'
+              : 'Hersteller hinzufügen'
+        }
       >
         <input
           className="input"
           autoFocus
           value={addVal}
-          placeholder={addKind === 'location' ? 'z. B. Gold’s Gym' : 'z. B. Cybex'}
+          placeholder={
+            addKind === 'location'
+              ? 'z. B. Gold’s Gym'
+              : addKind === 'activity'
+                ? 'z. B. Schwimmen'
+                : 'z. B. Cybex'
+          }
           onChange={(e) => setAddVal(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && addValue()}
         />

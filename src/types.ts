@@ -55,18 +55,26 @@ export interface SetLog {
   prevReps?: number | null
 }
 
+// Welche Stufe der Wasserfall-Logik die Vorbelegung geliefert hat.
+export type PrefillTier = 'location' | 'manufacturer' | 'other'
+
 export interface SessionExercise {
   id: string
   exerciseId?: string
   name: string
   sets: SetLog[]
   note?: string
+  // Rueckverweis auf den Plan-Eintrag -> noetig fuers Satz-Template (Regel A/B).
+  planExerciseId?: string
   // Gedaechtnis: diese Entscheidung gilt fuers NAECHSTE Mal.
   progression?: Progression | null
   nextNote?: string
   // Hinweis vom letzten Mal (zur Anzeige), beim Start uebernommen.
   hintProgression?: Progression | null
   hintNote?: string
+  // Herkunft der Vorbelegung (Wasserfall) fuer die UI-Markierung.
+  prefillTier?: PrefillTier
+  prefillManufacturer?: string
 }
 
 export interface WorkoutSession {
@@ -83,6 +91,20 @@ export interface WorkoutSession {
   dayName?: string
   exercises: SessionExercise[]
   finished: boolean
+  // Beim Beenden eingefroren: spaetere Aenderungen an Gewicht/MET wirken nicht
+  // rueckwirkend.
+  calories?: number
+  calcBodyWeightKg?: number
+  calcMet?: number
+}
+
+// Nicht getrackte Einheit (Personal-Training, Lauf …): nur Datum + Typ.
+// Bewusst ohne Dauer/kcal - dafuer gibt es keine verlaesslichen Werte.
+export interface Activity {
+  id: string // `${YYYY-MM-DD}|${type}` -> Abhaken ist idempotent
+  date: number // lokale Mitternacht
+  type: string
+  note?: string
 }
 
 export interface AppSettings {
@@ -91,6 +113,15 @@ export interface AppSettings {
   manufacturers: string[]
   lastLocation: string
   lastManufacturer: string
+  // Ort -> Hersteller. Key ist der getrimmte Ortsname in Kleinschreibung.
+  // Bewusst als eigene Map statt als Umbau von `locations` -> Backups bleiben lesbar.
+  locationManufacturers?: Record<string, string>
+  restSeconds?: number
+  bodyWeightKg?: number
+  metValue?: number
+  migratedV2At?: number
+  // Frei erweiterbare Typen fuer nicht getrackte Einheiten.
+  activityTypes?: string[]
 }
 
 export interface BackupFile {
@@ -101,4 +132,6 @@ export interface BackupFile {
   plans: Plan[]
   sessions: WorkoutSession[]
   settings: AppSettings | null
+  // Erst ab Backup-Version 3 vorhanden - beim Import optional behandeln.
+  activities?: Activity[]
 }
