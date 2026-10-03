@@ -4,13 +4,15 @@ import {
   DEFAULT_ACTIVITY_TYPES,
   db,
   dayKey,
-  exKey,
   getSettings,
+  isDayAssignable,
+  saveSettings,
   setActivityDayName,
   toggleActivity,
 } from '../db'
-import type { Activity, SessionExercise, WorkoutSession } from '../types'
+import type { Activity, WorkoutSession } from '../types'
 import { TopBar, EmptyState, Sheet } from '../components/ui'
+import { buildAiExportMarkdown, copyAiExportToClipboard, shareAiExport } from '../lib/aiExport'
 import {
   ActivityHeatmap,
   BarList,
@@ -23,26 +25,19 @@ import {
 } from '../components/charts'
 import { formatDate, formatDurationLong } from '../lib/format'
 import { shareNodeAsImage } from '../lib/shareImage'
-import { ChartIcon, CheckIcon } from '../components/icons'
+import {
+  computeActivityCounts,
+  computeDayBalance,
+  computeExerciseHistory,
+  computeOverallStats,
+  computeRecords,
+  computeStagnating,
+  doneReps,
+  type Occurrence,
+} from '../lib/stats'
+import { ChartIcon, CheckIcon, PlusIcon, TrashIcon } from '../components/icons'
 
 const GYM = 'Gym-Training'
-
-// Schwerster abgehakter Satz einer Uebung - die Kennzahl fuer "wird es mehr?".
-function topWeight(ex: SessionExercise): number | null {
-  const w = ex.sets.filter((s) => s.done).map((s) => s.weight ?? 0)
-  return w.length ? Math.max(...w) : null
-}
-
-function doneReps(ex: SessionExercise, weight: number): number | null {
-  const hit = ex.sets.find((s) => s.done && (s.weight ?? 0) === weight)
-  return hit?.reps ?? null
-}
-
-interface Occurrence {
-  session: WorkoutSession
-  ex: SessionExercise
-  top: number
-}
 
 function SessionRow({ label, s }: { label: string; s: WorkoutSession }) {
   return (
@@ -87,6 +82,11 @@ export default function StatsPage() {
   // Waehrend des Exports: Kalender skaliert statt zu scrollen, Kopfzeile sichtbar.
   const [exporting, setExporting] = useState(false)
   const [sharing, setSharing] = useState(false)
+  // KI-Export: frei hinzufuegbare Fragen (persistiert) + Export-Status.
+  const [aiQuestionsOpen, setAiQuestionsOpen] = useState(false)
+  const [newAiQuestion, setNewAiQuestion] = useState('')
+  const [aiExporting, setAiExporting] = useState(false)
+  const [aiCopyMsg, setAiCopyMsg] = useState<string | null>(null)
 
   async function shareStats() {
     const node = exportRef.current
@@ -104,6 +104,34 @@ export default function StatsPage() {
     }
   }
 
+  const aiQuestions = settings?.aiQuestions ?? []
+
+  async function addAiQuestion() {
+    const q = newAiQuestion.trim()
+    if (!q) return
+    await saveSettings({ aiQuestions: [...aiQuestions, q] })
+    setNewAiQuestion('')
+  }
+
+  async function removeAiQuestion(i: number) {
+    await saveSettings({ aiQuestions: aiQuestions.filter((_, j) => j !== i) })
+  }
+
+  async function exportForAi() {
+    setAiExporting(true)
+    const markdown = await buildAiExportMarkdown(aiQuestions)
+    const res = await shareAiExport(markdown)
+    setAiExporting(false)
+    if (res === 'failed') alert('Export konnte nicht erstellt werden.')
+  }
+
+  async function copyForAi() {
+    const markdown = await buildAiExportMarkdown(aiQuestions)
+    const ok = await copyAiExportToClipboard(markdown)
+    setAiCopyMsg(ok ? 'In Zwischenablage kopiert.' : 'Kopieren nicht möglich.')
+    setTimeout(() => setAiCopyMsg(null), 3000)
+  }
+
   const activityTypes = settings?.activityTypes ?? DEFAULT_ACTIVITY_TYPES
   // Feste Reihenfolge: Gym zuerst, dann die Typen wie in den Einstellungen.
   const categories = useMemo(() => [GYM, ...activityTypes], [activityTypes])
@@ -112,34 +140,10 @@ export default function StatsPage() {
     return i < 0 ? SERIES_OTHER : seriesColor(i)
   }
 
-  const stats = useMemo(() => {
-    if (!sessions || sessions.length === 0) return null
-    const desc = [...sessions].sort((a, b) => b.date - a.date)
-    const longest = [...sessions].sort((a, b) => b.durationSeconds - a.durationSeconds)[0]
-    return {
-      last: desc[0],
-      longest,
-      totalSeconds: sessions.reduce((n, s) => n + s.durationSeconds, 0),
-      locations: new Set(sessions.map((s) => s.location.trim()).filter(Boolean)).size,
-    }
-  }, [sessions])
+  const stats = useMemo(() => computeOverallStats(sessions ?? []), [sessions])
 
   // Alle je absolvierten Uebungen mit ihren Vorkommen.
-  const exercises = useMemo(() => {
-    const map = new Map<string, { name: string; occ: Occurrence[] }>()
-    for (const s of sessions ?? []) {
-      for (const ex of s.exercises) {
-        const top = topWeight(ex)
-        if (top == null) continue
-        const key = exKey(ex.name, ex.exerciseId)
-        const entry = map.get(key) ?? { name: ex.name, occ: [] }
-        entry.occ.push({ session: s, ex, top })
-        map.set(key, entry)
-      }
-    }
-    for (const e of map.values()) e.occ.sort((a, b) => b.session.date - a.session.date)
-    return [...map.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name, 'de'))
-  }, [sessions])
+  const exercises = useMemo(() => computeExerciseHistory(sessions ?? []), [sessions])
 
   const chosen = exercises.find(([k]) => k === selected)?.[1]
 
@@ -166,62 +170,18 @@ export default function StatsPage() {
   // Stagnation: seit wie vielen Einheiten am selben Hersteller kein neues
   // Hoechstgewicht mehr? Der Hersteller-Filter verhindert Fehlalarme durch
   // Geraetewechsel.
-  const stagnating = useMemo(() => {
-    const out: { name: string; manufacturer: string; weight: number; streak: number; note?: string }[] = []
-    for (const [, e] of exercises) {
-      if (e.occ.length < 3) continue
-      const man = e.occ[0].session.equipmentManufacturer
-      const same = e.occ.filter((o) => o.session.equipmentManufacturer === man)
-      if (same.length < 3) continue
-      let streak = 1
-      while (streak < same.length && same[streak].top >= same[0].top) streak++
-      if (streak >= 3) {
-        out.push({
-          name: e.name,
-          manufacturer: man || 'Ohne Hersteller',
-          weight: same[0].top,
-          streak,
-          note: same[0].ex.nextNote,
-        })
-      }
-    }
-    return out.sort((a, b) => b.streak - a.streak)
-  }, [exercises])
+  const stagnating = useMemo(() => computeStagnating(exercises), [exercises])
 
-  const records = useMemo(
+  const records = useMemo(() => computeRecords(exercises), [exercises])
+
+  const dayBalance = useMemo(
     () =>
-      exercises
-        .map(([, e]) => {
-          const best = e.occ.reduce((a, b) => (b.top > a.top ? b : a))
-          return {
-            name: e.name,
-            weight: best.top,
-            reps: doneReps(best.ex, best.top),
-            date: best.session.date,
-            where: best.session.location || 'Ohne Ort',
-            manufacturer: best.session.equipmentManufacturer,
-          }
-        })
-        .sort((a, b) => b.weight - a.weight),
-    [exercises],
+      computeDayBalance(sessions ?? [], activities ?? []).map((d, i) => ({
+        ...d,
+        color: seriesColor(i),
+      })),
+    [sessions, activities],
   )
-
-  const dayBalance = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const s of sessions ?? []) {
-      const k = s.dayName ?? 'Freies Training'
-      counts.set(k, (counts.get(k) ?? 0) + 1)
-    }
-    // Nicht getrackte Einheiten mit zugeordnetem Trainingstag (z.B. ein
-    // Personal-Training, das ein Push-Tag war) zaehlen mit - sonst wuerde die
-    // Balance zwischen den Tagen verfaelscht, weil sie sonst gar nicht auftauchen.
-    for (const a of activities ?? []) {
-      if (a.dayName) counts.set(a.dayName, (counts.get(a.dayName) ?? 0) + 1)
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([label, value], i) => ({ label, value, color: seriesColor(i) }))
-  }, [sessions, activities])
 
   // Kalender: ein Eintrag je Tag mit allen Kategorien, die stattgefunden haben.
   const heatDays = useMemo(() => {
@@ -241,11 +201,7 @@ export default function StatsPage() {
     return map
   }, [sessions, activities, categories])
 
-  const activityCounts = useMemo(() => {
-    const c = new Map<string, number>()
-    for (const a of activities ?? []) c.set(a.type, (c.get(a.type) ?? 0) + 1)
-    return c
-  }, [activities])
+  const activityCounts = useMemo(() => computeActivityCounts(activities ?? []), [activities])
 
   // Map statt Set, damit neben dem An/Aus-Zustand auch der zugeordnete
   // Trainingstag (dayName) verfuegbar ist.
@@ -491,6 +447,77 @@ export default function StatsPage() {
         </>
       )}
 
+      {/* Für KI exportieren - bewusst ausserhalb von exportRef (sonst im
+          Statistik-Bild enthalten) und immer sichtbar, auch bei leerer DB. */}
+      <div className="px-4 pb-4">
+        <section className="card">
+          <h2 className="mb-1 font-bold">Für KI exportieren</h2>
+          <p className="mb-3 text-xs text-muted">
+            Erzeugt eine Textdatei mit Anweisungen + deinen Trainingsdaten zum
+            manuellen Einfügen in ChatGPT, Claude, Gemini o. Ä. Keine
+            KI-Anbindung in der App.
+          </p>
+          <button
+            className="btn-ghost w-full"
+            onClick={() => setAiQuestionsOpen(true)}
+          >
+            Fragen verwalten ({aiQuestions.length})
+          </button>
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <button className="btn-ghost" onClick={copyForAi}>
+              Kopieren
+            </button>
+            <button className="btn-primary" onClick={exportForAi} disabled={aiExporting}>
+              {aiExporting ? 'Erstelle…' : 'Exportieren'}
+            </button>
+          </div>
+          {aiCopyMsg ? <p className="mt-2 text-center text-xs text-muted">{aiCopyMsg}</p> : null}
+        </section>
+      </div>
+
+      {/* KI-Export: Fragen verwalten */}
+      <Sheet
+        open={aiQuestionsOpen}
+        onClose={() => setAiQuestionsOpen(false)}
+        title="Fragen für die KI"
+      >
+        {aiQuestions.length > 0 ? (
+          <ul className="mb-3 space-y-1">
+            {aiQuestions.map((q, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2"
+              >
+                <span className="flex-1 text-sm">{q}</span>
+                <button
+                  className="p-1 text-neutral-500 active:text-red-400"
+                  onClick={() => removeAiQuestion(i)}
+                  aria-label="Entfernen"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mb-3 text-sm text-muted">
+            Noch keine Fragen – werden im Export unter „Zusätzliche Fragen" an die
+            KI mitgegeben.
+          </p>
+        )}
+        <label className="label">Neue Frage</label>
+        <input
+          className="input"
+          placeholder="z. B. Wie kann ich meine Schulterbeweglichkeit verbessern?"
+          value={newAiQuestion}
+          onChange={(e) => setNewAiQuestion(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addAiQuestion()}
+        />
+        <button className="btn-primary mt-3 w-full" onClick={addAiQuestion}>
+          <PlusIcon className="h-5 w-5" /> Frage hinzufügen
+        </button>
+      </Sheet>
+
       {/* Tag eintragen */}
       <Sheet
         open={dayOpen != null}
@@ -545,8 +572,12 @@ export default function StatsPage() {
                 </button>
 
                 {/* Trainingstag zuordnen - sonst fehlt diese Einheit in der
-                    Trainingstag-Balance unten bzw. verfaelscht sie. */}
-                {on && planDayNames.length > 0 ? (
+                    Trainingstag-Balance unten bzw. verfaelscht sie. Bereits
+                    zugeordnete Einheiten bleiben auch nach Deaktivieren des
+                    Typs entfernbar (nur neue Zuordnungen werden ausgeblendet). */}
+                {on &&
+                planDayNames.length > 0 &&
+                (isDayAssignable(settings, t) || !!activity!.dayName) ? (
                   <div className="mt-1.5 flex flex-wrap gap-1.5 pl-1">
                     {planDayNames.map((d) => {
                       const active = activity!.dayName === d
@@ -575,11 +606,15 @@ export default function StatsPage() {
             )
           })}
         </div>
-        {activityTypes.some((t) => dayActivities.has(t)) && planDayNames.length > 0 ? (
+        {activityTypes.some(
+          (t) =>
+            dayActivities.has(t) &&
+            (isDayAssignable(settings, t) || !!dayActivities.get(t)?.dayName),
+        ) && planDayNames.length > 0 ? (
           <p className="mt-2 text-xs text-neutral-600">
             Trainingstag zuordnen (optional), z. B. wenn ein Personal-Training
-            einem Push-/Pull-/Legs-Tag entsprach – zählt sonst nicht in der
-            Trainingstag-Balance mit.
+            einem Trainingstag aus deinem Plan entsprach – zählt sonst nicht in
+            der Trainingstag-Balance mit.
           </p>
         ) : null}
         {activityTypes.length === 0 ? (

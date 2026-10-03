@@ -58,6 +58,16 @@ export const DEFAULT_ACTIVITY_TYPES = ['Personal-Training', 'Lauf-Training']
 // Saetze fuer eine Uebung, zu der es noch keinerlei Historie gibt.
 export const DEFAULT_SET_COUNT = 3
 
+const DAY_MS = 24 * 60 * 60 * 1000
+// Ab wann ein Orts-/Kontinuitaets-Treffer als "veraltet" gilt und ein
+// Home-Gym-Vorschlag ueberhaupt in Frage kommt (Punkt 2).
+export const STALE_THRESHOLD_DAYS = 90
+// Mindestanzahl Datenpunkte am Home-Gym, bevor eine Steigerungsrate als
+// verlaesslich gilt.
+const HOME_GYM_MIN_POINTS = 3
+// Sicherheitsobergrenze gegen Ausreisser bei wenigen/verrauschten Daten.
+const HOME_GYM_GROWTH_CAP = 1.5
+
 export function uid(): string {
   return (
     Date.now().toString(36) + Math.random().toString(36).slice(2, 9)
@@ -115,6 +125,18 @@ export async function setActivityDayName(
   await db.activities.put({ ...existing, dayName })
 }
 
+// Ob fuer einen Einheit-Typ ueberhaupt eine Trainingstag-Zuordnung angeboten
+// wird. Ohne gespeicherten Wert: an fuer alle Typen ausser Lauf-Training
+// (sinnvoller Default, vom Nutzer so gewuenscht).
+export function isDayAssignable(
+  settings: AppSettings | undefined,
+  type: string,
+): boolean {
+  const stored = settings?.activityDayAssignable?.[type]
+  if (stored != null) return stored
+  return type !== 'Lauf-Training'
+}
+
 export function locationKey(location: string): string {
   return location.trim().toLowerCase()
 }
@@ -125,6 +147,38 @@ export function manufacturerForLocation(
   location: string,
 ): string {
   return settings.locationManufacturers?.[locationKey(location)] ?? ''
+}
+
+// Home-Gym (Punkt 2): manuell gewaehlter Ort, sonst automatisch der Ort mit
+// den meisten abgeschlossenen Sessions. Faellt auch zurueck, wenn der manuell
+// gewaehlte Ort in den Einstellungen inzwischen geloescht wurde.
+export function getHomeLocation(
+  settings: AppSettings,
+  finishedDesc: WorkoutSession[],
+): string {
+  const manual = settings.homeLocation?.trim()
+  if (manual && settings.locations.includes(manual)) return manual
+
+  const counts = new Map<string, { count: number; original: string }>()
+  for (const s of finishedDesc) {
+    const loc = s.location.trim()
+    if (!loc) continue
+    const key = locationKey(loc)
+    const cur = counts.get(key)
+    counts.set(key, { count: (cur?.count ?? 0) + 1, original: cur?.original ?? loc })
+  }
+  let best: { count: number; original: string } | undefined
+  for (const v of counts.values()) {
+    if (!best || v.count > best.count) best = v
+  }
+  return best?.original ?? ''
+}
+
+// Fuer die Einstellungen: zeigt den automatisch ermittelten Ort auch dann,
+// wenn der Nutzer bereits manuell einen anderen gewaehlt hat.
+export async function getAutoHomeLocation(): Promise<string> {
+  const sessions = await db.sessions.filter((s) => s.finished).toArray()
+  return getHomeLocation({ ...(await getSettings()), homeLocation: undefined }, sessions)
 }
 
 // NUR-LESEN: darf gefahrlos in useLiveQuery laufen. Schreibt nie in die DB
@@ -245,6 +299,22 @@ export async function upsertExerciseByName(name: string): Promise<string> {
   return id
 }
 
+// Freihantel-Sonderfall (Punkt 4): Eigenschaft der abstrakten Uebung, nicht
+// der Session/des Plan-Eintrags - gilt dadurch rueckwirkend ueberall.
+export async function setExerciseFreeWeight(
+  exerciseId: string,
+  value: boolean,
+): Promise<void> {
+  const ex = await db.exercises.get(exerciseId)
+  if (!ex) return
+  await db.exercises.put({ ...ex, isFreeWeight: value })
+}
+
+async function loadFreeWeightIds(): Promise<Set<string>> {
+  const all = await db.exercises.toArray()
+  return new Set(all.filter((e) => e.isFreeWeight).map((e) => e.id))
+}
+
 // ---- Aktive Session ----
 export async function getActiveSession(): Promise<WorkoutSession | undefined> {
   // Dexie speichert Boolean nicht indexierbar zuverlaessig -> filtern.
@@ -299,17 +369,25 @@ interface PrefillHit {
 // Prio 2 Hersteller     -> letztes Training mit gleichem Hersteller (ortsunabhaengig)
 // Prio 3 anderer Hersteller -> letztes Training ueberhaupt, nur als Richtwert
 // (die UI markiert Prio 3 als "neu kalibrieren").
+// Freihantel-Uebungen (freeWeight=true, Exercise.isFreeWeight) ueberspringen
+// Ort/Hersteller komplett: alle Vorkommen bilden einen gemeinsamen Pool.
 function pickPrefillSource(
   finishedDesc: WorkoutSession[],
   key: string,
   location: string,
   manufacturer: string,
+  freeWeight: boolean,
 ): PrefillHit | undefined {
   const hit = (s: WorkoutSession, tier: PrefillTier): PrefillHit => ({
     ex: findEx(s, key)!,
     tier,
     manufacturer: s.equipmentManufacturer,
   })
+
+  if (freeWeight) {
+    const any = finishedDesc.find((s) => findEx(s, key))
+    return any ? hit(any, 'freeweight') : undefined
+  }
 
   const loc = locationKey(location)
   if (loc) {
@@ -328,6 +406,108 @@ function pickPrefillSource(
   return anyLast ? hit(anyLast, 'other') : undefined
 }
 
+// Welche Sessions zur selben Kontinuitaet wie die Wasserfall-Quelle gehoeren
+// (fuer die Gewichts-Referenz-Faltung). Spiegelt exakt das Prio-1/2/freeweight-
+// Matching oben; Prio 3 ("other") hat bewusst keine Kontinuitaet - dort bleibt
+// das bisherige einfache Verhalten (+ "neu kalibrieren") unveraendert.
+function continuitySessions(
+  finishedDesc: WorkoutSession[],
+  key: string,
+  tier: PrefillTier,
+  location: string,
+  manufacturer: string,
+): WorkoutSession[] {
+  if (tier === 'freeweight') return finishedDesc.filter((s) => findEx(s, key))
+  if (tier === 'location') {
+    const loc = locationKey(location)
+    return finishedDesc.filter((s) => locationKey(s.location) === loc && findEx(s, key))
+  }
+  if (tier === 'manufacturer') {
+    return finishedDesc.filter((s) => s.equipmentManufacturer === manufacturer && findEx(s, key))
+  }
+  return []
+}
+
+export interface FoldedWeight {
+  weight: number | null
+  referenceDate: number | null
+}
+
+// Faltet die Gewichts-Referenz je Satz-Position ueber die Kontinuitaets-
+// Historie (aufsteigend chronologisch): ein hoeheres geloggtes Gewicht wird
+// immer uebernommen; ein niedrigeres nur mit explizitem "halten"/"senken"-
+// Hinweis (SessionExercise.progression) der jeweiligen Session - sonst bleibt
+// die alte, hoehere Referenz bestehen. Nur abgehakte Saetze mit geloggtem
+// Gewicht zaehlen als Datenpunkt (rein vorbefuellte, nie abgehakte Werte
+// wuerden die Referenz sonst verfaelschen). Reine, synchrone, testbare
+// Funktion - exportiert fuers Testharness.
+export function foldReferenceWeight(
+  sessions: WorkoutSession[],
+  key: string,
+): FoldedWeight[] {
+  const asc = [...sessions].sort((a, b) => a.date - b.date)
+  const refs: FoldedWeight[] = []
+  for (const s of asc) {
+    const ex = findEx(s, key)
+    if (!ex) continue
+    ex.sets.forEach((set, i) => {
+      if (!set.done || set.weight == null) return
+      const cur = refs[i]
+      if (!cur || cur.weight == null) {
+        refs[i] = { weight: set.weight, referenceDate: s.date }
+      } else if (set.weight > cur.weight) {
+        refs[i] = { weight: set.weight, referenceDate: s.date }
+      } else if (
+        set.weight < cur.weight &&
+        (ex.progression === 'same' || ex.progression === 'down')
+      ) {
+        refs[i] = { weight: set.weight, referenceDate: s.date }
+      }
+    })
+  }
+  return refs
+}
+
+// Schwerstes abgehaktes Gewicht einer Uebung in einer Session (wie
+// lib/stats.ts' topWeight, aber ueber den exKey statt eine konkrete
+// SessionExercise-Referenz - vermeidet einen zirkulaeren Import von lib/stats).
+function topWeightForKey(s: WorkoutSession, key: string): number | null {
+  const ex = findEx(s, key)
+  if (!ex) return null
+  const w = ex.sets.filter((x) => x.done && x.weight != null).map((x) => x.weight as number)
+  return w.length ? Math.max(...w) : null
+}
+
+// Home-Gym-Steigerungsrate (Punkt 2): gemessenes Verhaeltnis aus dem
+// Top-Gewicht am Home-Gym nahe "jetzt" geteilt durch das Top-Gewicht nahe dem
+// Stale-Datum - keine reine Zeit-Projektion, da die sonst nach einer
+// Trainingspause faelschlich mehr Gewicht vorschlagen wuerde. Erfordert
+// mindestens einen Home-Gym-Datenpunkt NACH dem Stale-Datum (sonst kein Beleg
+// fuer Fortschritt seither) plus insgesamt HOME_GYM_MIN_POINTS Datenpunkte.
+// Ergebnis nie < 1 (keine Senkung ueber den Trend) und auf HOME_GYM_GROWTH_CAP
+// begrenzt.
+export function computeExerciseGrowthRate(
+  homeSessions: WorkoutSession[],
+  key: string,
+  staleDate: number,
+): number | null {
+  const points = homeSessions
+    .map((s) => ({ date: s.date, top: topWeightForKey(s, key) }))
+    .filter((p): p is { date: number; top: number } => p.top != null)
+  if (points.length < HOME_GYM_MIN_POINTS) return null
+
+  const desc = [...points].sort((a, b) => b.date - a.date)
+  const newest = desc[0]
+  if (newest.date <= staleDate) return null
+
+  const before = desc.filter((p) => p.date <= staleDate)
+  const basis = before[0] ?? desc[desc.length - 1]
+  if (!basis || basis.top <= 0) return null
+
+  const ratio = newest.top / basis.top
+  return Math.min(HOME_GYM_GROWTH_CAP, Math.max(1, ratio))
+}
+
 // Baut eine Session-Uebung samt Wasserfall-Vorbelegung.
 // `targets` kommt aus dem Plan; ohne Plan bestimmt die Wasserfall-Quelle die
 // Satzanzahl (Antwort auf "Set-Template ohne Plan: aus letzter Session ableiten").
@@ -340,13 +520,17 @@ function buildExercise(opts: {
   finishedDesc: WorkoutSession[]
   location: string
   manufacturer: string
+  freeWeightIds: Set<string>
+  homeLocation: string
 }): SessionExercise {
   const key = exKey(opts.name, opts.exerciseId)
+  const isFreeWeight = !!opts.exerciseId && opts.freeWeightIds.has(opts.exerciseId)
   const source = pickPrefillSource(
     opts.finishedDesc,
     key,
     opts.location,
     opts.manufacturer,
+    isFreeWeight,
   )
 
   const targets: { reps: number | null; weight?: number }[] =
@@ -356,12 +540,55 @@ function buildExercise(opts: {
       (_, i) => ({ reps: source?.ex.sets[i]?.reps ?? null }),
     )
 
+  // Prio 3 ("other") hat keine Kontinuitaet -> keine Faltung, einfacher
+  // letzter Wert wie bisher (siehe continuitySessions).
+  const continuity =
+    source && source.tier !== 'other'
+      ? continuitySessions(opts.finishedDesc, key, source.tier, opts.location, opts.manufacturer)
+      : []
+  const folded = continuity.length ? foldReferenceWeight(continuity, key) : []
+
+  // Home-Gym-Vorschlag (Punkt 2): nur bei Prio 1/2/freeweight, nie bei Prio 3;
+  // Staleness bemisst sich an der NEUESTEN Session im Kontinuitaets-Pool, nicht
+  // pauschal an der Quelle. Kein Vorschlag, wenn der veraltete Ort selbst das
+  // Home-Gym ist (dort gibt es keinen externen Trend, der etwas beitruege).
+  let suggestedFactor: number | undefined
+  let staleDays: number | undefined
+  if (continuity.length && opts.homeLocation) {
+    const newestDate = Math.max(...continuity.map((s) => s.date))
+    const ageDays = Math.floor((Date.now() - newestDate) / DAY_MS)
+    const isHomeGymItself =
+      source!.tier === 'location' && locationKey(opts.location) === locationKey(opts.homeLocation)
+    if (ageDays >= STALE_THRESHOLD_DAYS && !isHomeGymItself) {
+      const homeSessions = opts.finishedDesc.filter(
+        (s) => locationKey(s.location) === locationKey(opts.homeLocation),
+      )
+      const factor = computeExerciseGrowthRate(homeSessions, key, newestDate)
+      if (factor != null && factor > 1) {
+        suggestedFactor = factor
+        staleDays = ageDays
+      }
+    }
+  }
+
   const sets: SetLog[] = targets.map((t, i) => {
     const prev = source?.ex.sets[i]
     const prevWeight = prev?.weight ?? null
     const prevReps = prev?.reps ?? null
-    // Letztes Training ueberschreibt den Plan-Standardwert beim Gewicht.
-    const weight = prevWeight != null ? prevWeight : t.weight ?? null
+    const ref = folded[i]
+
+    let weight: number | null
+    let referenceDate: number | null = null
+    if (ref && ref.weight != null) {
+      weight = ref.weight
+      // Nur anzeigen, wenn die Referenz vom zuletzt geloggten Wert abweicht
+      // (ein Einbruch wurde ignoriert) - sonst ist "zuletzt" schon identisch.
+      if (ref.weight !== prevWeight) referenceDate = ref.referenceDate
+    } else {
+      // Letztes Training ueberschreibt den Plan-Standardwert beim Gewicht.
+      weight = prevWeight != null ? prevWeight : t.weight ?? null
+    }
+
     return {
       id: uid(),
       weight,
@@ -369,6 +596,8 @@ function buildExercise(opts: {
       done: false,
       prevWeight,
       prevReps,
+      prefillWeight: weight,
+      referenceDate,
     }
   })
 
@@ -384,6 +613,8 @@ function buildExercise(opts: {
     hintNote: source?.ex.nextNote,
     prefillTier: source?.tier,
     prefillManufacturer: source?.manufacturer,
+    suggestedFactor,
+    staleDays,
   }
 }
 
@@ -392,6 +623,8 @@ function buildSessionExercise(
   finishedDesc: WorkoutSession[],
   location: string,
   manufacturer: string,
+  freeWeightIds: Set<string>,
+  homeLocation: string,
 ): SessionExercise {
   return buildExercise({
     name: pe.name,
@@ -402,6 +635,8 @@ function buildSessionExercise(
     finishedDesc,
     location,
     manufacturer,
+    freeWeightIds,
+    homeLocation,
   })
 }
 
@@ -412,13 +647,20 @@ export async function buildAdHocExercise(
   location: string,
   manufacturer: string,
 ): Promise<SessionExercise> {
-  const finishedDesc = await finishedSessionsDesc()
+  const [finishedDesc, freeWeightIds, settings] = await Promise.all([
+    finishedSessionsDesc(),
+    loadFreeWeightIds(),
+    getSettings(),
+  ])
+  const homeLocation = getHomeLocation(settings, finishedDesc)
   return buildExercise({
     name,
     exerciseId,
     finishedDesc,
     location,
     manufacturer,
+    freeWeightIds,
+    homeLocation,
   })
 }
 
@@ -440,8 +682,16 @@ export async function startSession(opts: {
   let planName: string | undefined
   let dayName: string | undefined
 
-  // Verlauf einmal laden (fuer Vorbelegung + Gedaechtnis-Hinweise).
-  const finishedDesc = await finishedSessionsDesc()
+  // Verlauf + Freihantel-Flags + Settings einmal laden (fuer Vorbelegung +
+  // Gedaechtnis-Hinweise). Beide Zweige (Plan wie Freies Training) brauchen
+  // dieselben Daten - einmalig hier laden statt in buildExercise/
+  // buildSessionExercise (die bleiben dadurch rein synchron und testbar).
+  const [finishedDesc, freeWeightIds, settings] = await Promise.all([
+    finishedSessionsDesc(),
+    loadFreeWeightIds(),
+    getSettings(),
+  ])
+  const homeLocation = getHomeLocation(settings, finishedDesc)
 
   if (opts.plan && opts.planDayId) {
     const day = opts.plan.days.find((d) => d.id === opts.planDayId)
@@ -450,7 +700,14 @@ export async function startSession(opts: {
     // Uebungen aus dem Plan KOPIEREN (keine Referenz -> freie Abweichung),
     // Gewichte aus dem passenden letzten Training vorbelegen.
     exercises = (day?.exercises ?? []).map((pe) =>
-      buildSessionExercise(pe, finishedDesc, opts.location, opts.manufacturer),
+      buildSessionExercise(
+        pe,
+        finishedDesc,
+        opts.location,
+        opts.manufacturer,
+        freeWeightIds,
+        homeLocation,
+      ),
     )
   } else if (opts.adHocExercises?.length) {
     exercises = opts.adHocExercises.map((e) =>
@@ -460,6 +717,8 @@ export async function startSession(opts: {
         finishedDesc,
         location: opts.location,
         manufacturer: opts.manufacturer,
+        freeWeightIds,
+        homeLocation,
       }),
     )
   }
@@ -546,14 +805,60 @@ export async function shrinkSetTemplate(
   )
 }
 
-// Regel A: ein zusaetzlich ABGEHAKTER Satz wird zum neuen Ziel-Volumen.
+// Regel A (Wdh.): ein Satz zaehlt nur, wenn sein geloggtes Gewicht mindestens
+// dem fuer ihn vorbefuellten Gewicht entsprach - sonst wuerde ein leichter
+// "Ausdauer-Tag" mit mehr Wdh. bei reduziertem Gewicht faelschlich das Ziel
+// anheben. Senkung bleibt wie immer nie automatisch; Wdh.-Ziele werden daher
+// auch nach einer Gewichtssteigerung nicht von selbst wieder gesenkt.
+function qualifiesForRepsGrowth(set: SetLog): boolean {
+  if (!set.done || set.reps == null) return false
+  // Koerpergewicht/keine Gewichtsangabe: das Gate greift nicht, da es keinen
+  // "leichteren Tag" ueber das Gewicht geben kann.
+  if (set.weight == null) return true
+  // Keine Baseline bekannt (z.B. allererste Session ueberhaupt): nicht
+  // blockieren, es gibt noch keinen Hinweis auf einen "leichteren Tag".
+  if (set.prefillWeight == null) return true
+  return set.weight >= set.prefillWeight
+}
+
+function growRepsTarget(pe: PlanExercise, ex: SessionExercise): PlanExercise {
+  if (pe.customSets?.length) {
+    let changed = false
+    const customSets = pe.customSets.map((c, i) => {
+      const set = ex.sets[i]
+      if (!set || !qualifiesForRepsGrowth(set) || set.reps! <= c.reps) return c
+      changed = true
+      return { ...c, reps: set.reps! }
+    })
+    if (!changed) return pe
+    return { ...pe, customSets, targetReps: customSets[0]?.reps ?? pe.targetReps }
+  }
+
+  // Einfacher Modus: nur anheben, wenn ALLE abgehakten Saetze innerhalb von
+  // targetSets den aktuellen Zielwert uebertreffen - ein einzelner Ausreisser
+  // reicht nicht fuer eine zuverlaessige neue Vorgabe. Schaltet die Uebung
+  // nicht automatisch in den individuellen Modus um.
+  const relevant = ex.sets.slice(0, pe.targetSets).filter((s) => s.done)
+  if (relevant.length === 0) return pe
+  const qualifies = relevant.every(
+    (s) => qualifiesForRepsGrowth(s) && s.reps! > pe.targetReps,
+  )
+  if (!qualifies) return pe
+  const minReps = Math.min(...relevant.map((s) => s.reps!))
+  return { ...pe, targetReps: minReps }
+}
+
+// Regel A (Saetze): ein zusaetzlich ABGEHAKTER Satz wird zum neuen Ziel-
+// Volumen. Reihenfolge wichtig: erst Satz-Anzahl, danach Wdh. (operiert auf
+// dem ggf. schon gewachsenen Template).
 async function growSetTemplates(s: WorkoutSession): Promise<void> {
   for (const ex of s.exercises) {
     if (!ex.planExerciseId) continue
     const done = ex.sets.filter((x) => x.done).length
-    await updatePlanExercise(s.planId, s.planDayId, ex.planExerciseId, (pe) =>
-      done > pe.targetSets ? withSetCount(pe, done) : pe,
-    )
+    await updatePlanExercise(s.planId, s.planDayId, ex.planExerciseId, (pe) => {
+      const grown = done > pe.targetSets ? withSetCount(pe, done) : pe
+      return growRepsTarget(grown, ex)
+    })
   }
 }
 

@@ -76,6 +76,25 @@
   .stepper {
     @apply flex h-11 w-11 items-center justify-center rounded-lg bg-white/5 text-ink active:bg-white/10;
   }
+
+  /* "Plan-Modus": nur auf Plan-Bearbeiten-Screens (PlansPage, PlanDayEditPage),
+     damit Plan-Bearbeitung und laufendes Training visuell nie verwechselt
+     werden. Hoehere Spezifitaet als die Basis-Klassen gewinnt automatisch,
+     Reihenfolge im Stylesheet ist daher egal. */
+  .plan-mode .btn-primary {
+    @apply bg-planAccent active:bg-planAccentDark;
+  }
+  .plan-mode .chip-active {
+    @apply border-planAccent bg-planAccent/15 text-planAccent;
+  }
+  .plan-mode .input:focus {
+    @apply border-planAccent ring-planAccent/30;
+  }
+  /* Ausnahme: Buttons, die in den Trainings-Modus wechseln, bleiben
+     markenrot, auch innerhalb von .plan-mode (z.B. "Training starten"). */
+  .plan-mode .btn-primary.btn-force-brand {
+    @apply bg-brand active:bg-brandDark;
+  }
 }
 
 /* Safe-Area-Padding fuer iPhone-Notch/Home-Indicator */

@@ -4,6 +4,10 @@ export interface Exercise {
   id: string
   name: string
   muscleGroup?: string
+  // Ortsunabhaengig identisch belastbar (z.B. Kurzhantel-Curls) -> die
+  // Gewichts-Referenz-Faltung poolt alle Vorkommen global statt nach
+  // Ort/Hersteller zu trennen. Eigenschaft der Uebung, nicht der Session.
+  isFreeWeight?: boolean
 }
 
 // ---- Vorlage / Plan ----
@@ -53,10 +57,20 @@ export interface SetLog {
   // Referenz vom letzten Mal (zur Anzeige "zuletzt: X kg × Y"), beim Start gesetzt.
   prevWeight?: number | null
   prevReps?: number | null
+  // Tatsaechlich vorbefuellter Wert bei Session-Start (Snapshot, vor Nutzer-
+  // Bearbeitung). Dient 1) als Gate fuer die Wdh.-Anhebung (ein Satz zaehlt nur,
+  // wenn das geloggte Gewicht >= diesem Wert war) und 2) als Vergleichsbasis fuer
+  // die "Referenz"-Anzeige, wenn sie von prevWeight abweicht (ignorierter Einbruch).
+  prefillWeight?: number | null
+  // Datum der Session, aus der prefillWeight stammt (Referenz-Faltung) - nur
+  // gesetzt, wenn sie sich von der zuletzt geloggten Session unterscheidet.
+  referenceDate?: number | null
 }
 
 // Welche Stufe der Wasserfall-Logik die Vorbelegung geliefert hat.
-export type PrefillTier = 'location' | 'manufacturer' | 'other'
+// 'freeweight': als Exercise.isFreeWeight markierte Uebung - Ort/Hersteller
+// werden ignoriert, alle Vorkommen bilden einen gemeinsamen Pool.
+export type PrefillTier = 'location' | 'manufacturer' | 'other' | 'freeweight'
 
 export interface SessionExercise {
   id: string
@@ -75,6 +89,11 @@ export interface SessionExercise {
   // Herkunft der Vorbelegung (Wasserfall) fuer die UI-Markierung.
   prefillTier?: PrefillTier
   prefillManufacturer?: string
+  // Home-Gym-Vorschlag (Punkt 2): Faktor fuer "Uebernehmen", nur gesetzt wenn
+  // die Quelle veraltet ist und eine Home-Gym-Rate vorliegt. Multipliziert je
+  // Satz einzeln (individuelle Saetze koennen unterschiedliche Gewichte haben).
+  suggestedFactor?: number
+  staleDays?: number
 }
 
 export interface WorkoutSession {
@@ -126,6 +145,16 @@ export interface AppSettings {
   migratedV2At?: number
   // Frei erweiterbare Typen fuer nicht getrackte Einheiten.
   activityTypes?: string[]
+  // Pro Einheit-Typ: soll eine Trainingstag-Zuordnung angeboten werden?
+  // Fehlt ein Key, gilt isDayAssignable()'s Default (siehe db.ts).
+  activityDayAssignable?: Record<string, boolean>
+  // Frei formulierte Fragen fuer den KI-Export (lib/aiExport.ts), ueberleben
+  // zwischen Besuchen.
+  aiQuestions?: string[]
+  // Home-Gym fuer die Steigerungsrate bei veralteten Orts-Treffern (Punkt 2).
+  // Leer oder zeigt auf einen geloeschten Ort -> automatische Ermittlung
+  // (siehe getHomeLocation in db.ts).
+  homeLocation?: string
 }
 
 export interface BackupFile {

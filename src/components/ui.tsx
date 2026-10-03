@@ -1,20 +1,30 @@
 import { useEffect, type ReactNode } from 'react'
-import { ArrowLeft } from './icons'
+import { ArrowLeft, ClipboardIcon } from './icons'
 import { useNavigate } from 'react-router-dom'
 
 export function TopBar({
   title,
   back,
   right,
+  accent,
+  badge,
 }: {
   title: string
   back?: boolean | (() => void)
   right?: ReactNode
+  // "Plan-Modus": Indigo-Akzentlinie + optionales Badge, nur auf Plan-Screens.
+  accent?: boolean
+  badge?: ReactNode
 }) {
   const navigate = useNavigate()
   const onBack = typeof back === 'function' ? back : () => navigate(-1)
   return (
-    <header className="pt-safe sticky top-0 z-20 border-b border-line bg-bg/90 backdrop-blur">
+    <header
+      className={
+        'pt-safe sticky top-0 z-20 border-b border-line bg-bg/90 backdrop-blur' +
+        (accent ? ' border-t-2 border-t-planAccent' : '')
+      }
+    >
       <div className="flex h-14 items-center gap-2 px-3">
         {back ? (
           <button
@@ -26,9 +36,21 @@ export function TopBar({
           </button>
         ) : null}
         <h1 className="flex-1 truncate text-lg font-bold">{title}</h1>
+        {badge}
         {right}
       </div>
     </header>
+  )
+}
+
+// Badge "Plan-Modus" fuer PlansPage/PlanDayEditPage-TopBars. Farbe allein ist
+// kein ausreichendes Signal -> immer mit Icon + Text.
+export function PlanModeBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-planAccent/40 bg-planAccent/15 px-2.5 py-1 text-xs font-semibold text-planAccent">
+      <ClipboardIcon className="h-3.5 w-3.5" />
+      Plan-Modus
+    </span>
   )
 }
 

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uid, upsertExerciseByName } from '../db'
+import { db, setExerciseFreeWeight, uid, upsertExerciseByName } from '../db'
 import type { Plan, PlanExercise } from '../types'
-import { TopBar, Sheet, Confirm, EmptyState } from '../components/ui'
+import { TopBar, Sheet, Confirm, EmptyState, PlanModeBadge } from '../components/ui'
+import { ExercisePicker } from '../components/ExercisePicker'
 import { PlusIcon, TrashIcon, DumbbellIcon } from '../components/icons'
 
 export default function PlanDayEditPage() {
@@ -26,19 +27,22 @@ export default function PlanDayEditPage() {
   // Individuelle Sätze
   const [customMode, setCustomMode] = useState(false)
   const [customRows, setCustomRows] = useState<{ reps: string; weight: string }[]>([])
+  // Aus dem Picker gewaehlte bekannte Uebung (nur fuer die Hervorhebung im
+  // Picker - save() loest die Id ohnehin erneut ueber upsertExerciseByName auf).
+  const [pickedExerciseId, setPickedExerciseId] = useState<string | undefined>(undefined)
+  // null = noch nicht manuell umgeschaltet -> leitet sich aus einer per Name
+  // gematchten bestehenden Uebung ab (siehe matchedFreeWeight).
+  const [freeWeight, setFreeWeight] = useState<boolean | null>(null)
 
-  const suggestions = useMemo(() => {
-    const q = name.trim().toLowerCase()
-    if (!q) return []
-    return (allExercises ?? [])
-      .filter((e) => e.name.toLowerCase().includes(q) && e.name.toLowerCase() !== q)
-      .slice(0, 5)
-  }, [name, allExercises])
+  function matchedFreeWeight(n: string): boolean {
+    const q = n.trim().toLowerCase()
+    return !!allExercises?.find((e) => e.name.toLowerCase() === q)?.isFreeWeight
+  }
 
   if (!plan || !day) {
     return (
-      <div>
-        <TopBar title="Trainingstag" back />
+      <div className="plan-mode">
+        <TopBar title="Trainingstag" back accent badge={<PlanModeBadge />} />
         <EmptyState title="Trainingstag nicht gefunden" />
       </div>
     )
@@ -48,6 +52,8 @@ export default function PlanDayEditPage() {
     setIsNew(true)
     setEditing({ id: uid(), name: '', targetSets: 3, targetReps: 10 })
     setName('')
+    setPickedExerciseId(undefined)
+    setFreeWeight(null)
     setSets('3')
     setReps('10')
     setWeight('')
@@ -60,6 +66,8 @@ export default function PlanDayEditPage() {
     setIsNew(false)
     setEditing(ex)
     setName(ex.name)
+    setPickedExerciseId(ex.exerciseId)
+    setFreeWeight(null)
     setSets(String(ex.targetSets))
     setReps(String(ex.targetReps))
     setWeight(ex.targetWeight != null ? String(ex.targetWeight) : '')
@@ -95,6 +103,7 @@ export default function PlanDayEditPage() {
     const cleanName = name.trim()
     if (!cleanName) return
     const exerciseId = await upsertExerciseByName(cleanName)
+    await setExerciseFreeWeight(exerciseId, freeWeight ?? matchedFreeWeight(cleanName))
 
     let updated: PlanExercise
     if (customMode) {
@@ -153,10 +162,12 @@ export default function PlanDayEditPage() {
   }
 
   return (
-    <div>
+    <div className="plan-mode">
       <TopBar
         title={day.name}
         back
+        accent
+        badge={<PlanModeBadge />}
         right={
           <button
             className="btn-ghost h-10 w-10 rounded-full p-0"
@@ -253,7 +264,7 @@ export default function PlanDayEditPage() {
         ) : null}
 
         <button
-          className="btn-primary mt-2 w-full"
+          className="btn-primary btn-force-brand mt-2 w-full"
           onClick={() => navigate('/start')}
         >
           Training aus diesem Tag starten
@@ -265,27 +276,34 @@ export default function PlanDayEditPage() {
         onClose={() => setEditing(null)}
         title={isNew ? 'Übung hinzufügen' : 'Übung bearbeiten'}
       >
-        <label className="label">Übung</label>
-        <input
-          className="input"
-          autoFocus
-          placeholder="z. B. Bankdrücken"
+        <ExercisePicker
+          exercises={allExercises ?? []}
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(v) => {
+            setName(v)
+            setPickedExerciseId(undefined)
+          }}
+          onPick={(e) => {
+            setName(e.name)
+            setPickedExerciseId(e.id)
+          }}
+          selectedId={pickedExerciseId}
         />
-        {suggestions.length > 0 ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {suggestions.map((s) => (
-              <button
-                key={s.id}
-                className="chip"
-                onClick={() => setName(s.name)}
-              >
-                {s.name}
-              </button>
-            ))}
-          </div>
-        ) : null}
+
+        <button
+          type="button"
+          className={
+            'chip mt-3 w-full justify-center ' +
+            ((freeWeight ?? matchedFreeWeight(name)) ? 'chip-active' : '')
+          }
+          onClick={() => setFreeWeight(!(freeWeight ?? matchedFreeWeight(name)))}
+        >
+          Freihantel-Übung (ortsunabhängig)
+        </button>
+        <p className="mt-1.5 text-xs text-muted">
+          Nur aktivieren, wenn diese Übung immer mit freien Gewichten gemacht wird –
+          Maschinen-Variante als eigene Übung anlegen.
+        </p>
 
         {/* Umschalter: einfach vs. individuelle Sätze */}
         <div className="mt-4 flex gap-2">

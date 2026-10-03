@@ -17,6 +17,19 @@ kein Login, keine Tracker. Umgesetzt nach [`gym-app-spec.md`](./gym-app-spec.md)
   speichern" rein lokal.
 - **Verlauf** – vergangene Trainings nach Datum mit Detailansicht.
 - **Backup** – vollständiger JSON-Export/-Import der lokalen Datenbank.
+- **Übungs-Picker & „Plan-Modus"** – bekannte Übungen auswählen oder neu anlegen,
+  einheitlich im Plan-Editor und im laufenden Training. Die Plan-Bearbeiten-Screens
+  haben ein eigenes Indigo-Farbschema, damit Plan ≠ laufendes Training nie verwechselt
+  wird.
+- **Home-Gym-Vorbelegung** – bei selten besuchten Studios wird zusätzlich zum
+  ehrlichen „zuletzt"-Wert ein aus dem Home-Gym-Fortschritt hochgerechneter
+  Gewichtsvorschlag angeboten (per Antippen übernehmbar, nie automatisch).
+  Freihantel-Übungen lassen sich als ortsunabhängig markieren.
+- **KI-Export** – Textdatei mit Trainingsdaten, Auswertungs-Anweisungen und frei
+  hinzufügbaren Fragen, zum manuellen Einfügen in ChatGPT/Claude/Gemini u. Ä. Keine
+  KI-Anbindung in der App.
+- **Trainingstag-Zuordnung konfigurierbar** – pro „Weitere Einheit"-Typ (z. B.
+  Lauf-Training) abschaltbar, ob eine Trainingstag-Zuordnung angeboten wird.
 
 ## Datenschutz
 

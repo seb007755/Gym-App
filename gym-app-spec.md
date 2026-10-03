@@ -128,8 +128,12 @@ Klare Trennung zwischen **Vorlage** (Plan) und **Instanz** (durchgeführtes Trai
 
 - Kein Multi-Device-Sync, kein Cloud-Account.
 - Kein Soll/Ist- oder Progressions-Vergleich in der Trainer-Zusammenfassung (nur Ist-Werte).
-- Kein Hersteller pro Übung (nur pro Training).
-- Keine Social-/Sharing-Features außer dem lokal erzeugten Screenshot/Bild.
+- Kein Hersteller pro Übung (nur pro Training) — **Ausnahme ab v2.1:** das optionale
+  Freihantel-Flag an der Übung selbst (Abschnitt 12) ändert, wie Ort/Hersteller beim
+  Vorbelegen gewichtet werden; es führt keinen echten Hersteller-pro-Übung-Wert ein.
+- Keine Social-/Sharing-Features außer dem lokal erzeugten Screenshot/Bild — **Ausnahme
+  ab v2.1:** der KI-Markdown-Export (Abschnitt 12) teilt Trainingsdaten als Textdatei,
+  weiterhin ohne jede Server-/API-Anbindung.
 - Keine Ernährungs-, Körpergewichts- oder Wearable-Integration (kann später nachgezogen werden, nicht jetzt).
 
 ---
@@ -143,3 +147,49 @@ Die erste lauffähige Version gilt als fertig, wenn:
 4. Beim Beenden eine screenshot-taugliche Ist-Wert-Zusammenfassung erscheint.
 5. Alle Daten lokal in IndexedDB persistieren und als JSON exportiert/importiert werden können.
 6. Die Seite als statisches Build auf GitHub Pages läuft, offline-fähig und auf iOS installierbar ist.
+
+---
+
+## 12. Nachträge v2.1
+
+Ergänzt nach dem Mindestumfang (Abschnitt 11), ohne die dortigen Punkte zu ändern. Alle
+neuen Felder sind additiv (kein Dexie-Versionssprung, bestehende Backups bleiben
+importierbar — Grundsatz aus Abschnitt 2 gilt unverändert).
+
+### 12.1 Einheitlicher Übungs-Picker + "Plan-Modus"
+- Plan-Editor (Abschnitt 8, View 1) und aktives Training (View 2, "Übung ergänzen")
+  nutzen denselben Picker: bekannte Übungen durchsuchen/auswählen ODER neu anlegen.
+- Die beiden Plan-Bearbeiten-Screens (Pläne-Übersicht, Trainingstag-Editor) tragen ein
+  eigenes Indigo-Farbschema ("Plan-Modus", Badge + Akzentlinie), ausschließlich dort,
+  damit Plan-Bearbeitung und laufendes Training nie verwechselt werden.
+
+### 12.2 Wasserfall-Logik, Erweiterung (ergänzt Abschnitt 4 und die
+    "DATENLOGIK & UX-SCHEMA FÜR VIELREISENDE" aus der Wunschliste)
+- **Regel C (Gewicht, asymmetrisch):** ein höheres geloggtes Gewicht wird immer als
+  neue Referenz für die nächste Vorbelegung übernommen; ein niedrigeres nur, wenn der
+  Nutzer am Sessionende explizit "halten" oder "senken" gewählt hat. Gilt innerhalb
+  der bestehenden Prio-1/2-Kontinuität (gleicher Ort bzw. gleicher Hersteller); Prio 3
+  (neuer Hersteller) bleibt unverändert ein einfacher letzter Wert mit
+  "neu kalibrieren"-Warnung.
+- **Regel A, erweitert um Wiederholungen:** zusätzlich zur bestehenden Satz-Anzahl-
+  Anhebung wird auch das Wiederholungsziel im Plan angehoben, wenn abgehakte Sätze es
+  bei mindestens dem vorbefüllten Gewicht übertreffen. Senkung bleibt nie automatisch.
+- **Freihantel-Sonderfall:** eine Übung kann an den Übungs-Stammdaten (nicht am
+  Training) als "Freihantel" markiert werden. Für solche Übungen ignoriert die
+  Referenz-Bildung Ort und Hersteller komplett (ein Pool über alle Vorkommen), da
+  freie Gewichte ortsunabhängig identisch belastbar sind.
+- **Home-Gym-Vorbelegung:** ein (manuell wählbares, sonst automatisch ermitteltes)
+  Home-Gym liefert pro Übung eine gemessene Steigerungsrate. Ist der Prio-1/2-Treffer
+  älter als 90 Tage, wird zusätzlich zum ehrlichen "zuletzt"-Wert ein per Antippen zu
+  übernehmender Vorschlag angezeigt — nie automatisch übernommen.
+
+### 12.3 KI-Markdown-Export
+- Zusätzlicher Export (neben dem bestehenden JSON-Backup, Abschnitt 7): eine Textdatei
+  mit Analyse-Anweisungen, frei hinzufügbaren Fragen und den Trainingsdaten, zum
+  manuellen Einfügen in eine externe KI. Keine KI-Anbindung in der App, kein
+  automatischer Versand.
+
+### 12.4 Trainingstag-Zuordnung je Einheit-Typ
+- Bei "Weitere Einheiten" (nicht getrackte Einheiten wie Personal-/Lauf-Training) ist
+  pro Typ in den Einstellungen abschaltbar, ob überhaupt eine Trainingstag-Zuordnung
+  angeboten wird (z. B. sinnvoll für Personal-Training, nicht für Lauf-Training).

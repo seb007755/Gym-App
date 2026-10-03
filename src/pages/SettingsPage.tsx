@@ -4,7 +4,9 @@ import {
   DEFAULT_ACTIVITY_TYPES,
   DEFAULT_REST_SECONDS,
   db,
+  getAutoHomeLocation,
   getSettings,
+  isDayAssignable,
   locationKey,
   manufacturerForLocation,
   saveSettings,
@@ -24,6 +26,7 @@ import { PlusIcon, TrashIcon } from '../components/icons'
 
 export default function SettingsPage() {
   const settings = useLiveQuery(() => getSettings(), [])
+  const autoHomeLocation = useLiveQuery(() => getAutoHomeLocation(), [])
   const counts = useLiveQuery(async () => ({
     plans: await db.plans.count(),
     sessions: await db.sessions.count(),
@@ -104,7 +107,23 @@ export default function SettingsPage() {
   async function removeActivityType(t: string) {
     // Bereits eingetragene Tage bleiben erhalten - nur der Typ verschwindet
     // aus der Auswahl.
-    await saveSettings({ activityTypes: activityTypes.filter((x) => x !== t) })
+    const dayAssignable = { ...(settings?.activityDayAssignable ?? {}) }
+    delete dayAssignable[t]
+    await saveSettings({
+      activityTypes: activityTypes.filter((x) => x !== t),
+      activityDayAssignable: dayAssignable,
+    })
+  }
+
+  async function toggleDayAssignable(t: string) {
+    if (!settings) return
+    const next = !isDayAssignable(settings, t)
+    await saveSettings({
+      activityDayAssignable: {
+        ...(settings.activityDayAssignable ?? {}),
+        [t]: next,
+      },
+    })
   }
 
   async function removeLocation(l: string) {
@@ -321,6 +340,29 @@ export default function SettingsPage() {
           </p>
         </section>
 
+        {/* Home-Gym (Punkt 2): Steigerungsrate fuer veraltete Orts-Treffer */}
+        <section className="card">
+          <h2 className="mb-1 font-bold">Home-Gym</h2>
+          <p className="mb-3 text-xs text-muted">
+            Dient als Referenz für Gewichts-Vorschläge, wenn du ein selten besuchtes
+            Studio wieder betrittst.
+          </p>
+          <select
+            className="input"
+            value={settings?.homeLocation ?? ''}
+            onChange={(e) => saveSettings({ homeLocation: e.target.value || undefined })}
+          >
+            <option value="">
+              Automatisch{autoHomeLocation ? ` (${autoHomeLocation})` : ''}
+            </option>
+            {(settings?.locations ?? []).map((l) => (
+              <option key={l} value={l}>
+                {l}
+              </option>
+            ))}
+          </select>
+        </section>
+
         {/* Nicht getrackte Einheiten */}
         <section className="card">
           <div className="mb-1 flex items-center gap-2">
@@ -338,18 +380,33 @@ export default function SettingsPage() {
           </p>
           {activityTypes.length > 0 ? (
             <ul className="space-y-1">
-              {activityTypes.map((t) => (
-                <li key={t} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
-                  <span className="flex-1 truncate text-sm">{t}</span>
-                  <button
-                    className="p-1 text-neutral-500 active:text-red-400"
-                    onClick={() => removeActivityType(t)}
-                    aria-label="Entfernen"
-                  >
-                    <TrashIcon className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
+              {activityTypes.map((t) => {
+                const assignable = isDayAssignable(settings, t)
+                return (
+                  <li key={t} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
+                    <span className="flex-1 truncate text-sm">{t}</span>
+                    <button
+                      className={
+                        'rounded-md border px-2 py-1 text-xs font-medium ' +
+                        (assignable
+                          ? 'border-brand bg-brand/15 text-brand'
+                          : 'border-line text-muted')
+                      }
+                      onClick={() => toggleDayAssignable(t)}
+                      aria-pressed={assignable}
+                    >
+                      Trainingstag zuordnen
+                    </button>
+                    <button
+                      className="p-1 text-neutral-500 active:text-red-400"
+                      onClick={() => removeActivityType(t)}
+                      aria-label="Entfernen"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             <p className="text-sm text-neutral-500">Keine Typen angelegt.</p>

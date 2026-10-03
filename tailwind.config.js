@@ -17,6 +17,8 @@ export default {
         warn: '#FF9F0A', // Neuer Hersteller: Gewicht neu kalibrieren
         ink: '#E6EDF3', // High-contrast text (--text-primary)
         muted: '#8B949E', // Labels / units (--text-secondary)
+        planAccent: '#5E5CE6', // "Plan-Modus": nur auf Plan-Bearbeiten-Screens
+        planAccentDark: '#4542B0', // Darker indigo hover/active fuer Plan-Modus
       },
       fontFamily: {
         sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],

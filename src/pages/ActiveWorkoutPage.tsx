@@ -10,12 +10,14 @@ import {
   getActiveSession,
   getSettings,
   newSet,
+  setExerciseFreeWeight,
   shrinkSetTemplate,
   upsertExerciseByName,
 } from '../db'
 import type { Progression, SessionExercise, SetLog, WorkoutSession } from '../types'
 import { TopBar, Sheet, Confirm } from '../components/ui'
-import { formatDuration } from '../lib/format'
+import { ExercisePicker } from '../components/ExercisePicker'
+import { formatDate, formatDuration } from '../lib/format'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -52,6 +54,7 @@ export default function ActiveWorkoutPage() {
   const elapsed = useElapsed(session?.startTime)
 
   const settings = useLiveQuery(() => getSettings(), [])
+  const allExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), [])
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   // Regel B: gezielt einen vorbefuellten Satz entfernen.
@@ -65,6 +68,9 @@ export default function ActiveWorkoutPage() {
   >(null)
   const [addExOpen, setAddExOpen] = useState(false)
   const [newExName, setNewExName] = useState('')
+  // null = noch nicht manuell umgeschaltet -> Anzeige leitet sich aus einer
+  // per Name gematchten bestehenden Uebung ab (siehe matchedFreeWeight).
+  const [newExFreeWeight, setNewExFreeWeight] = useState<boolean | null>(null)
   // Welche Übungen sind aufgeklappt (Default: eingeklappt).
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const toggleExpand = (exId: string) =>
@@ -177,6 +183,24 @@ export default function ActiveWorkoutPage() {
     mutateExercise(exId, (ex) => ({ ...ex, ...patch }))
   }
 
+  // Home-Gym-Vorschlag (Punkt 2): multipliziert jedes Satz-Gewicht einzeln
+  // (individuelle Saetze koennen unterschiedliche Gewichte haben), rundet auf
+  // 0,5 kg, und blendet den Chip danach aus.
+  function applySuggestedFactor(exId: string) {
+    mutateExercise(exId, (ex) => {
+      if (ex.suggestedFactor == null) return ex
+      const factor = ex.suggestedFactor
+      return {
+        ...ex,
+        sets: ex.sets.map((s) =>
+          s.weight != null ? { ...s, weight: Math.round((s.weight * factor) / 0.5) * 0.5 } : s,
+        ),
+        suggestedFactor: undefined,
+        staleDays: undefined,
+      }
+    })
+  }
+
   function removeExercise(exId: string) {
     if (!session) return
     persist({ ...session, exercises: session.exercises.filter((e) => e.id !== exId) })
@@ -199,6 +223,9 @@ export default function ActiveWorkoutPage() {
     const name = newExName.trim()
     if (!name) return
     const exerciseId = await upsertExerciseByName(name)
+    // Freihantel-Flag VOR dem Build persistieren, damit die Vorbelegung
+    // dieser selben Session es bereits beruecksichtigt.
+    await setExerciseFreeWeight(exerciseId, newExFreeWeight ?? matchedFreeWeight(name))
     // Auch nachtraeglich ergaenzte Uebungen folgen der Wasserfall-Vorbelegung.
     const ex = await buildAdHocExercise(
       name,
@@ -208,7 +235,16 @@ export default function ActiveWorkoutPage() {
     )
     persist({ ...session, exercises: [...session.exercises, ex] })
     setNewExName('')
+    setNewExFreeWeight(null)
     setAddExOpen(false)
+  }
+
+  // Freihantel-Toggle-Anfangszustand: aus einer per Name gematchten
+  // bestehenden Uebung uebernehmen, solange der Nutzer ihn nicht manuell
+  // umgeschaltet hat (newExFreeWeight bleibt dann null).
+  function matchedFreeWeight(name: string): boolean {
+    const q = name.trim().toLowerCase()
+    return !!allExercises?.find((e) => e.name.toLowerCase() === q)?.isFreeWeight
   }
 
   // Plan-Uebungen, bei denen Saetze offen geblieben sind (aber nicht komplett
@@ -318,10 +354,18 @@ export default function ActiveWorkoutPage() {
             onRemoveExercise={() => removeExercise(ex.id)}
             onProgression={(p) => setExerciseField(ex.id, { progression: p })}
             onNextNote={(t) => setExerciseField(ex.id, { nextNote: t })}
+            onApplySuggestedFactor={() => applySuggestedFactor(ex.id)}
           />
         ))}
 
-        <button className="btn-ghost w-full" onClick={() => setAddExOpen(true)}>
+        <button
+          className="btn-ghost w-full"
+          onClick={() => {
+            setNewExName('')
+            setNewExFreeWeight(null)
+            setAddExOpen(true)
+          }}
+        >
           <PlusIcon className="h-5 w-5" /> Übung ergänzen
         </button>
 
@@ -358,14 +402,31 @@ export default function ActiveWorkoutPage() {
 
       {/* Übung ergänzen */}
       <Sheet open={addExOpen} onClose={() => setAddExOpen(false)} title="Übung ergänzen">
-        <input
-          className="input"
-          autoFocus
-          placeholder="Name der Übung"
+        <ExercisePicker
+          exercises={allExercises ?? []}
           value={newExName}
-          onChange={(e) => setNewExName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addExercise()}
+          onChange={setNewExName}
+          onPick={(e) => setNewExName(e.name)}
+          excludeIds={
+            session?.exercises.map((e) => e.exerciseId).filter((id): id is string => !!id) ?? []
+          }
+          onEnter={addExercise}
         />
+        <button
+          className={
+            'chip mt-3 w-full justify-center ' +
+            ((newExFreeWeight ?? matchedFreeWeight(newExName)) ? 'chip-active' : '')
+          }
+          onClick={() =>
+            setNewExFreeWeight(!(newExFreeWeight ?? matchedFreeWeight(newExName)))
+          }
+        >
+          Freihantel-Übung (ortsunabhängig)
+        </button>
+        <p className="mt-1.5 text-xs text-muted">
+          Nur aktivieren, wenn diese Übung immer mit freien Gewichten gemacht wird –
+          Maschinen-Variante als eigene Übung anlegen.
+        </p>
         <button className="btn-primary mt-4 w-full" onClick={addExercise}>
           Hinzufügen
         </button>
@@ -527,6 +588,7 @@ function ExerciseCard({
   onRemoveExercise,
   onProgression,
   onNextNote,
+  onApplySuggestedFactor,
 }: {
   ex: SessionExercise
   open: boolean
@@ -542,6 +604,7 @@ function ExerciseCard({
   onRemoveExercise: () => void
   onProgression: (p: Progression) => void
   onNextNote: (t: string) => void
+  onApplySuggestedFactor: () => void
 }) {
   const [confirmDel, setConfirmDel] = useState(false)
   // Welche Satz-Notizfelder sind aufgeklappt
@@ -623,6 +686,17 @@ function ExerciseCard({
         </div>
       ) : null}
       <HintBanner ex={ex} />
+      {ex.suggestedFactor != null ? (
+        <div className="mb-2 flex items-center gap-2 rounded-lg bg-white/5 px-2.5 py-2 text-xs">
+          <span className="flex-1 text-ink">
+            <span className="font-semibold">Vorschlag:</span> Faktor ×
+            {ex.suggestedFactor.toFixed(2)} (Home-Gym-Trend, {ex.staleDays} Tage alt)
+          </span>
+          <button className="btn-primary btn-sm" onClick={onApplySuggestedFactor}>
+            Übernehmen
+          </button>
+        </div>
+      ) : null}
 
       <div className="mb-1 grid grid-cols-[2rem_1fr_1fr_3rem] items-center gap-2 px-1 text-[11px] uppercase tracking-wide text-muted">
         <span className="text-center">#</span>
@@ -691,6 +765,15 @@ function ExerciseCard({
                   {hasRef
                     ? `zuletzt: ${s.prevWeight != null ? s.prevWeight + ' kg' : '–'} × ${s.prevReps ?? '–'}`
                     : ''}
+                  {/* Weicht die Vorbelegung vom zuletzt geloggten Wert ab (ein
+                      Einbruch wurde ignoriert), zeigt diese Zeile die
+                      tatsaechlich genutzte Referenz - "Vorschlag" bleibt dem
+                      Home-Gym-Chip vorbehalten. */}
+                  {s.referenceDate != null ? (
+                    <span className="ml-1.5 text-neutral-500">
+                      · Referenz: {s.prefillWeight} kg ({formatDate(s.referenceDate)})
+                    </span>
+                  ) : null}
                 </span>
                 <button
                   className={

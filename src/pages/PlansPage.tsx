@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uid } from '../db'
 import type { Plan, PlanDay } from '../types'
-import { TopBar, Sheet, Confirm, EmptyState } from '../components/ui'
+import { TopBar, Sheet, Confirm, EmptyState, PlanModeBadge } from '../components/ui'
 import { ChevronRight, DumbbellIcon, PlusIcon, TrashIcon } from '../components/icons'
 
 export default function PlansPage() {
@@ -47,9 +47,11 @@ export default function PlansPage() {
   }
 
   return (
-    <div>
+    <div className="plan-mode">
       <TopBar
         title="Trainingspläne"
+        accent
+        badge={<PlanModeBadge />}
         right={
           <button
             className="btn-ghost h-10 w-10 rounded-full p-0"
