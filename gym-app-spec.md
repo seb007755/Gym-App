@@ -150,7 +150,7 @@ Die erste lauffähige Version gilt als fertig, wenn:
 
 ---
 
-## 12. Nachträge v2.1
+## 12. Nachträge v2.1 / v2.2
 
 Ergänzt nach dem Mindestumfang (Abschnitt 11), ohne die dortigen Punkte zu ändern. Alle
 neuen Felder sind additiv (kein Dexie-Versionssprung, bestehende Backups bleiben
@@ -158,10 +158,14 @@ importierbar — Grundsatz aus Abschnitt 2 gilt unverändert).
 
 ### 12.1 Einheitlicher Übungs-Picker + "Plan-Modus"
 - Plan-Editor (Abschnitt 8, View 1) und aktives Training (View 2, "Übung ergänzen")
-  nutzen denselben Picker: bekannte Übungen durchsuchen/auswählen ODER neu anlegen.
+  nutzen denselben Picker: bekannte Übungen als Liste (Checkbox-Zeile) durchsuchen/
+  auswählen ODER neu anlegen.
 - Die beiden Plan-Bearbeiten-Screens (Pläne-Übersicht, Trainingstag-Editor) tragen ein
-  eigenes Indigo-Farbschema ("Plan-Modus", Badge + Akzentlinie), ausschließlich dort,
-  damit Plan-Bearbeitung und laufendes Training nie verwechselt werden.
+  eigenes Indigo-Farbschema ("Plan-Modus", Badge + Akzentlinie), **durchgängig inkl.
+  des "Training aus diesem Tag starten"-Buttons**, ausschließlich dort, damit
+  Plan-Bearbeitung und laufendes Training nie verwechselt werden.
+- Jedes "Übung hinzufügen"-Sheet (Plan-Editor, Training, Einstellungen → Übungen) hat
+  einen Abbrechen-Button neben der primären Aktion.
 
 ### 12.2 Wasserfall-Logik, Erweiterung (ergänzt Abschnitt 4 und die
     "DATENLOGIK & UX-SCHEMA FÜR VIELREISENDE" aus der Wunschliste)
@@ -193,3 +197,20 @@ importierbar — Grundsatz aus Abschnitt 2 gilt unverändert).
 - Bei "Weitere Einheiten" (nicht getrackte Einheiten wie Personal-/Lauf-Training) ist
   pro Typ in den Einstellungen abschaltbar, ob überhaupt eine Trainingstag-Zuordnung
   angeboten wird (z. B. sinnvoll für Personal-Training, nicht für Lauf-Training).
+
+### 12.5 Übungen verwalten (Einstellungen)
+- Eigene Sektion in den Einstellungen für die Übungs-Stammdaten: Name ändern (ohne
+  Rückwirkung auf bereits kopierte Plan-/Session-Namen, siehe Abschnitt 3.3 — Vorlage
+  und Instanz werden kopiert, nicht live referenziert), Freihantel-Flag setzen, neue
+  Übung anlegen ohne Plan-Zuordnung, Löschen mit zweistufiger Bestätigung ("Sicher?" →
+  "Ganz sicher?"). Löschen betrifft nur die Stammdaten-Zeile; bestehende Pläne/
+  Sessions bleiben unverändert lesbar.
+
+### 12.6 Startbildschirm mit Trainings-Zitaten + Schnellstart
+- Ein zusätzlicher Bildschirm **ohne eigene Route und ohne Nav-Eintrag**: erscheint bei
+  jedem App-Start automatisch anstelle der normalen Ansicht (kein Bottom-Nav sichtbar),
+  zeigt eines von 100 statisch mitgelieferten Zitaten zu Training/Kraft/mentaler
+  Stärke/Motivation (zufällig gewählt, kein Laufzeit-Netzwerkzugriff — Grundsatz aus
+  Abschnitt 1/2). Antippen des Hintergrunds führt zur normalen App; zusätzlich bietet
+  der Bildschirm einen vollwertigen Schnellstart (Plan, Trainingstag, Ort, Hersteller),
+  der direkt eine Session anlegt und ins aktive Training wechselt.

@@ -90,11 +90,6 @@
   .plan-mode .input:focus {
     @apply border-planAccent ring-planAccent/30;
   }
-  /* Ausnahme: Buttons, die in den Trainings-Modus wechseln, bleiben
-     markenrot, auch innerhalb von .plan-mode (z.B. "Training starten"). */
-  .plan-mode .btn-primary.btn-force-brand {
-    @apply bg-brand active:bg-brandDark;
-  }
 }
 
 /* Safe-Area-Padding fuer iPhone-Notch/Home-Indicator */

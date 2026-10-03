@@ -263,10 +263,7 @@ export default function PlanDayEditPage() {
           </button>
         ) : null}
 
-        <button
-          className="btn-primary btn-force-brand mt-2 w-full"
-          onClick={() => navigate('/start')}
-        >
+        <button className="btn-primary mt-2 w-full" onClick={() => navigate('/start')}>
           Training aus diesem Tag starten
         </button>
       </div>
