@@ -4,6 +4,7 @@
 import { db } from '../db'
 import { formatDate, formatDurationLong } from './format'
 import {
+  computeActivityCounts,
   computeDayBalance,
   computeExerciseHistory,
   computeOverallStats,
@@ -55,6 +56,7 @@ export async function buildAiExportMarkdown(customQuestions: string[]): Promise<
   const stagnating = computeStagnating(exercises)
   const records = computeRecords(exercises)
   const dayBalance = computeDayBalance(sessions, activities)
+  const activityCounts = computeActivityCounts(activities)
   const questions = customQuestions.map((q) => q.trim()).filter(Boolean)
 
   const lines: string[] = []
@@ -78,6 +80,15 @@ export async function buildAiExportMarkdown(customQuestions: string[]): Promise<
       'und Studios nicht direkt vergleichbar (unterschiedliche Hebelverhältnisse) – ' +
       'das ist in der Historie unten jeweils angegeben.',
   )
+  lines.push('')
+  lines.push(
+    '**Wichtig für die Beurteilung von Trainingsfrequenz/-balance:** "Getrackte ' +
+      'Trainingseinheiten" unten zählt NUR Einheiten mit Satz-/Gewichts-Tracking im ' +
+      'Gym. Abschnitt „Weitere Trainingseinheiten" weiter unten listet zusätzliche ' +
+      'Einheiten (z. B. Personal-Training, Lauftraining), die bewusst ohne Satz-/ ' +
+      'Gewichtsdetails erfasst werden. Beziehe diese mit ein, bevor du die ' +
+      'Trainingsfrequenz oder -balance als zu gering/unausgeglichen einstufst.',
+  )
 
   if (questions.length) {
     lines.push('')
@@ -88,7 +99,9 @@ export async function buildAiExportMarkdown(customQuestions: string[]): Promise<
   lines.push('')
   lines.push('## Kennzahlen')
   if (stats) {
-    lines.push(`- Getrackte Trainingseinheiten: ${sessions.length}`)
+    lines.push(
+      `- Getrackte Trainingseinheiten (nur Gym, mit Satz-/Gewichts-Tracking): ${sessions.length}`,
+    )
     lines.push(`- Gesamte Trainingszeit: ${formatDurationLong(stats.totalSeconds)}`)
     lines.push(`- Anzahl Orte: ${stats.locations}`)
     lines.push(
@@ -99,12 +112,26 @@ export async function buildAiExportMarkdown(customQuestions: string[]): Promise<
         `${formatDurationLong(stats.longest.durationSeconds)}`,
     )
   } else {
-    lines.push('- Noch keine abgeschlossenen Trainings vorhanden.')
+    lines.push('- Noch keine abgeschlossenen Gym-Trainings vorhanden.')
+  }
+
+  if (activityCounts.size) {
+    lines.push('')
+    lines.push('## Weitere Trainingseinheiten (ohne Satz-/Gewichtsdetails)')
+    lines.push(
+      'Bewusst ohne Dauer-/Gewichtsdaten erfasst (z. B. Personal-Training, Lauftraining) ' +
+        '– zählen aber als eigenständige Trainingseinheiten:',
+    )
+    for (const [type, count] of activityCounts) lines.push(`- ${type}: ${count}×`)
   }
 
   if (dayBalance.length) {
     lines.push('')
     lines.push('## Trainingstag-Balance')
+    lines.push(
+      'Enthält sowohl Gym-Einheiten als auch die oben gelisteten weiteren Einheiten, ' +
+        'sofern ihnen ein Trainingstag zugeordnet wurde:',
+    )
     for (const d of dayBalance) lines.push(`- ${d.label}: ${d.value}×`)
   }
 
@@ -178,7 +205,15 @@ export async function shareAiExport(markdown: string): Promise<ShareResult> {
 
     if (navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: 'Trainings-Auswertung für KI' })
+        // `text` zusaetzlich zu `files` mitgeben: manche Ziel-Apps (z.B. Gemini)
+        // nehmen den Datei-Anhang beim Teilen entgegen, lesen seinen Inhalt aber
+        // nicht aus und zeigen nur `title` an. Mit `text` bekommen auch solche
+        // Apps den vollen Inhalt (zur Not doppelt, wenn eine App beides nutzt).
+        await navigator.share({
+          files: [file],
+          title: 'Trainings-Auswertung für KI',
+          text: markdown,
+        })
         return 'shared'
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled'

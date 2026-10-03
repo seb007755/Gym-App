@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { QUOTES } from '../lib/quotes'
 import { PlanStartForm } from './PlanStartForm'
 import { DumbbellIcon } from './icons'
@@ -9,11 +10,21 @@ import { DumbbellIcon } from './icons'
 // garantiert "jedes Mal ein neues Zitat" ohne Zusatzlogik.
 export function SplashScreen({ onDismiss }: { onDismiss: () => void }) {
   const quote = useMemo(() => QUOTES[Math.floor(Math.random() * QUOTES.length)], [])
+  const navigate = useNavigate()
+
+  // Tippen zum Fortfahren landet gezielt auf "Training" (erster Bottom-Nav-
+  // Tab) statt auf der zufaelligen letzten Route. Der Schnellstart-Pfad ueber
+  // PlanStartForm (onStarted=onDismiss) navigiert selbst zu /workout und
+  // braucht dieses Extra-Routing nicht.
+  function dismissToTraining() {
+    onDismiss()
+    navigate('/start')
+  }
 
   return (
     <div
       className="pt-safe pb-safe flex h-full flex-col overflow-y-auto bg-bg px-6"
-      onClick={onDismiss}
+      onClick={dismissToTraining}
     >
       <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
         <DumbbellIcon className="mb-6 h-10 w-10 text-brand" />

@@ -18,10 +18,10 @@ import { SplashScreen } from './components/SplashScreen'
 function BottomNav() {
   const active = useLiveQuery(() => getActiveSession(), [])
   const items = [
-    { to: '/', label: 'Pläne', icon: DumbbellIcon, end: true },
     { to: '/start', label: 'Training', icon: PlayIcon },
-    { to: '/history', label: 'Verlauf', icon: ClockIcon },
     { to: '/stats', label: 'Statistik', icon: ChartIcon },
+    { to: '/history', label: 'Verlauf', icon: ClockIcon },
+    { to: '/', label: 'Pläne', icon: DumbbellIcon, end: true },
     { to: '/settings', label: 'Einstellungen', icon: CogIcon },
   ]
   return (
