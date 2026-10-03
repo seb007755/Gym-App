@@ -30,6 +30,12 @@ kein Login, keine Tracker. Umgesetzt nach [`gym-app-spec.md`](./gym-app-spec.md)
   KI-Anbindung in der App.
 - **Trainingstag-Zuordnung konfigurierbar** – pro „Weitere Einheit"-Typ (z. B.
   Lauf-Training) abschaltbar, ob eine Trainingstag-Zuordnung angeboten wird.
+- **Übungen verwalten** – eigene Sektion in den Einstellungen: Name ändern,
+  Freihantel-Flag setzen, neue Übungen ohne Plan-Zuordnung anlegen, Löschen mit
+  zweistufiger Bestätigung.
+- **Startbildschirm** – bei jedem App-Start ein zufälliges Motivations-Zitat (aus
+  100, Training/Kraft/mentale Stärke) plus direkter Schnellstart (Plan + Ort), ohne
+  erst zur normalen Trainings-Seite wechseln zu müssen.
 
 ## Datenschutz
 

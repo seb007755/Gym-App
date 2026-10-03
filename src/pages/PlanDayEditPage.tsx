@@ -298,7 +298,7 @@ export default function PlanDayEditPage() {
           }
           onClick={() => setFreeWeight(!(freeWeight ?? matchedFreeWeight(name)))}
         >
-          Freihantel-Übung (ortsunabhängig)
+          Freihantel-Übung
         </button>
         <p className="mt-1.5 text-xs text-muted">
           Nur aktivieren, wenn diese Übung immer mit freien Gewichten gemacht wird –
@@ -410,9 +410,14 @@ export default function PlanDayEditPage() {
           onChange={(e) => setNote(e.target.value)}
         />
 
-        <button className="btn-primary mt-5 w-full" onClick={save}>
-          Speichern
-        </button>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button className="btn-ghost" onClick={() => setEditing(null)}>
+            Abbrechen
+          </button>
+          <button className="btn-primary" onClick={save}>
+            Speichern
+          </button>
+        </div>
       </Sheet>
 
       <Confirm

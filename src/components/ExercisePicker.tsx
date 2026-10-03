@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import type { Exercise } from '../types'
+import { CheckIcon } from './icons'
 
 // Vereinheitlichter "bekannte Uebung waehlen ODER neue eintippen"-Baustein.
 // Content-only: wird in einen bereits offenen Sheet eingebettet, schliesst
@@ -51,30 +52,36 @@ export function ExercisePicker({
         onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
       />
       {suggestions.length > 0 ? (
-        <div className="mt-2 flex max-h-56 flex-wrap gap-2 overflow-y-auto">
+        <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
           {suggestions.map((ex) => {
             const active = ex.id === selectedId || ex.name === value.trim()
             const inUse = excluded.has(ex.id)
             return (
-              <button
-                key={ex.id}
-                type="button"
-                className={
-                  'chip' +
-                  (active ? ' chip-active' : '') +
-                  (inUse && !active ? ' opacity-60' : '')
-                }
-                onClick={() => {
-                  onChange(ex.name)
-                  onPick({ id: ex.id, name: ex.name })
-                }}
-              >
-                {ex.name}
-                {inUse ? <span className="ml-1 text-xs text-muted">· im Training</span> : null}
-              </button>
+              <li key={ex.id}>
+                <button
+                  type="button"
+                  className={'chip w-full justify-start gap-3 py-2.5 ' + (active ? 'chip-active' : '')}
+                  onClick={() => {
+                    onChange(ex.name)
+                    onPick({ id: ex.id, name: ex.name })
+                  }}
+                  aria-pressed={active}
+                >
+                  <span
+                    className={
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded border ' +
+                      (active ? 'border-current bg-current' : 'border-line')
+                    }
+                  >
+                    {active ? <CheckIcon className="h-3.5 w-3.5 text-white" /> : null}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-left">{ex.name}</span>
+                  {inUse ? <span className="shrink-0 text-xs text-muted">im Training</span> : null}
+                </button>
+              </li>
             )
           })}
-        </div>
+        </ul>
       ) : (
         <p className="mt-2 text-sm text-muted">Keine Übungen gefunden – als neue anlegen.</p>
       )}

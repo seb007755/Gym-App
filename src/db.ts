@@ -310,6 +310,28 @@ export async function setExerciseFreeWeight(
   await db.exercises.put({ ...ex, isFreeWeight: value })
 }
 
+// Aendert nur die Stammdaten-Zeile. Bewusst OHNE Rueckwirkung auf bereits
+// kopierte PlanExercise.name/SessionExercise.name (Vorlage/Instanz werden
+// kopiert, nicht live referenziert) - das Matching laeuft ueber exerciseId.
+export async function renameExercise(
+  exerciseId: string,
+  name: string,
+): Promise<void> {
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const ex = await db.exercises.get(exerciseId)
+  if (!ex) return
+  await db.exercises.put({ ...ex, name: trimmed })
+}
+
+// Loescht nur die Stammdaten-Zeile (Autocomplete/Picker). Plaene und Sessions
+// referenzieren exerciseId direkt auf sich selbst, bleiben also unveraendert
+// lesbar; eine erneute Nutzung des Namens legt ueber upsertExerciseByName
+// einfach wieder eine neue Zeile an.
+export async function deleteExerciseRecord(exerciseId: string): Promise<void> {
+  await db.exercises.delete(exerciseId)
+}
+
 async function loadFreeWeightIds(): Promise<Set<string>> {
   const all = await db.exercises.toArray()
   return new Set(all.filter((e) => e.isFreeWeight).map((e) => e.id))

@@ -4,13 +4,17 @@ import {
   DEFAULT_ACTIVITY_TYPES,
   DEFAULT_REST_SECONDS,
   db,
+  deleteExerciseRecord,
   getAutoHomeLocation,
   getSettings,
   isDayAssignable,
   locationKey,
   manufacturerForLocation,
+  renameExercise,
   saveSettings,
+  setExerciseFreeWeight,
   setLocationManufacturer,
+  upsertExerciseByName,
 } from '../db'
 import {
   DEFAULT_BODY_WEIGHT_KG,
@@ -21,7 +25,8 @@ import {
   metLabel,
 } from '../lib/calories'
 import { downloadBackup, importBackup, type ImportResult } from '../lib/backup'
-import { TopBar, Sheet } from '../components/ui'
+import type { Exercise } from '../types'
+import { TopBar, Sheet, Confirm } from '../components/ui'
 import { PlusIcon, TrashIcon } from '../components/icons'
 
 export default function SettingsPage() {
@@ -44,6 +49,15 @@ export default function SettingsPage() {
   // Ort, dessen Hersteller gerade geaendert wird (einziger Weg zur Aenderung).
   const [editLoc, setEditLoc] = useState<string | null>(null)
   const [editLocVal, setEditLocVal] = useState('')
+
+  // Uebungen-Stammdaten verwalten.
+  const allExercises = useLiveQuery(() => db.exercises.orderBy('name').toArray(), [])
+  const [exerciseSheet, setExerciseSheet] = useState<
+    { id: string | null; name: string; freeWeight: boolean } | null
+  >(null)
+  // Zweistufige Loesch-Bestaetigung ("Sicher?" -> "Ganz sicher?").
+  const [confirmDelEx, setConfirmDelEx] = useState<Exercise | null>(null)
+  const [confirmDelExFinal, setConfirmDelExFinal] = useState<Exercise | null>(null)
 
   const activityTypes = settings?.activityTypes ?? DEFAULT_ACTIVITY_TYPES
   const restSeconds = settings?.restSeconds ?? DEFAULT_REST_SECONDS
@@ -146,6 +160,34 @@ export default function SettingsPage() {
   async function removeManufacturer(m: string) {
     if (!settings) return
     await saveSettings({ manufacturers: settings.manufacturers.filter((x) => x !== m) })
+  }
+
+  function openNewExercise() {
+    setExerciseSheet({ id: null, name: '', freeWeight: false })
+  }
+
+  function openEditExercise(ex: Exercise) {
+    setExerciseSheet({ id: ex.id, name: ex.name, freeWeight: !!ex.isFreeWeight })
+  }
+
+  async function saveExercise() {
+    if (!exerciseSheet) return
+    const name = exerciseSheet.name.trim()
+    if (!name) return
+    let id = exerciseSheet.id
+    if (id) {
+      await renameExercise(id, name)
+    } else {
+      id = await upsertExerciseByName(name)
+    }
+    await setExerciseFreeWeight(id, exerciseSheet.freeWeight)
+    setExerciseSheet(null)
+  }
+
+  async function confirmDeleteExerciseFinal() {
+    if (!confirmDelExFinal) return
+    await deleteExerciseRecord(confirmDelExFinal.id)
+    setConfirmDelExFinal(null)
   }
 
   return (
@@ -443,6 +485,50 @@ export default function SettingsPage() {
           ) : null}
         </section>
 
+        {/* Uebungen (Stammdaten) */}
+        <section className="card">
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="flex-1 font-bold">Übungen</h2>
+            <button
+              className="btn-ghost btn-sm h-9 w-9 rounded-full p-0"
+              onClick={openNewExercise}
+              aria-label="Übung hinzufügen"
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </div>
+          {allExercises && allExercises.length > 0 ? (
+            <ul className="max-h-72 space-y-1 overflow-y-auto">
+              {allExercises.map((ex) => (
+                <li key={ex.id} className="flex items-center gap-2 rounded-lg bg-surface2 px-3 py-2">
+                  <button
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => openEditExercise(ex)}
+                  >
+                    <span className="block truncate text-sm">{ex.name}</span>
+                    {ex.isFreeWeight ? (
+                      <span className="block text-xs text-muted">Freihantel</span>
+                    ) : null}
+                  </button>
+                  <button
+                    className="p-1 text-neutral-500 active:text-red-400"
+                    onClick={() => setConfirmDelEx(ex)}
+                    aria-label="Löschen"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500">Noch keine Übungen angelegt.</p>
+          )}
+          <p className="mt-2 text-xs text-neutral-600">
+            Neue Übungen landen nur in der Datenbank, ohne einem Trainingsplan
+            zugeordnet zu werden.
+          </p>
+        </section>
+
         <p className="pb-4 text-center text-xs text-neutral-600">
           Gym Tracker · offline & lokal · v1.0
         </p>
@@ -566,6 +652,71 @@ export default function SettingsPage() {
           Hinzufügen
         </button>
       </Sheet>
+
+      {/* Uebung anlegen/bearbeiten */}
+      <Sheet
+        open={!!exerciseSheet}
+        onClose={() => setExerciseSheet(null)}
+        title={exerciseSheet?.id ? 'Übung bearbeiten' : 'Übung anlegen'}
+      >
+        <label className="label">Name</label>
+        <input
+          className="input"
+          autoFocus
+          placeholder="z. B. Bankdrücken"
+          value={exerciseSheet?.name ?? ''}
+          onChange={(e) =>
+            setExerciseSheet((s) => (s ? { ...s, name: e.target.value } : s))
+          }
+          onKeyDown={(e) => e.key === 'Enter' && saveExercise()}
+        />
+        <button
+          type="button"
+          className={'chip mt-3 w-full justify-center ' + (exerciseSheet?.freeWeight ? 'chip-active' : '')}
+          onClick={() =>
+            setExerciseSheet((s) => (s ? { ...s, freeWeight: !s.freeWeight } : s))
+          }
+        >
+          Freihantel-Übung
+        </button>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button className="btn-ghost" onClick={() => setExerciseSheet(null)}>
+            Abbrechen
+          </button>
+          <button
+            className="btn-primary"
+            disabled={!exerciseSheet?.name.trim()}
+            onClick={saveExercise}
+          >
+            Speichern
+          </button>
+        </div>
+      </Sheet>
+
+      {/* Uebung loeschen: zweistufige Bestaetigung */}
+      <Confirm
+        open={!!confirmDelEx}
+        title="Übung löschen?"
+        message={
+          confirmDelEx
+            ? `"${confirmDelEx.name}" endgültig aus der Datenbank entfernen? Bestehende Trainings und Pläne behalten ihre Werte, nur die Übung verschwindet aus der Liste.`
+            : undefined
+        }
+        confirmLabel="Weiter"
+        onConfirm={() => {
+          setConfirmDelExFinal(confirmDelEx)
+          setConfirmDelEx(null)
+        }}
+        onCancel={() => setConfirmDelEx(null)}
+      />
+      <Confirm
+        open={!!confirmDelExFinal}
+        title="Ganz sicher?"
+        message="Das kann nicht rückgängig gemacht werden."
+        confirmLabel="Endgültig löschen"
+        onConfirm={confirmDeleteExerciseFinal}
+        onCancel={() => setConfirmDelExFinal(null)}
+      />
     </div>
   )
 }

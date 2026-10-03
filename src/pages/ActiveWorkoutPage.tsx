@@ -421,15 +421,20 @@ export default function ActiveWorkoutPage() {
             setNewExFreeWeight(!(newExFreeWeight ?? matchedFreeWeight(newExName)))
           }
         >
-          Freihantel-Übung (ortsunabhängig)
+          Freihantel-Übung
         </button>
         <p className="mt-1.5 text-xs text-muted">
           Nur aktivieren, wenn diese Übung immer mit freien Gewichten gemacht wird –
           Maschinen-Variante als eigene Übung anlegen.
         </p>
-        <button className="btn-primary mt-4 w-full" onClick={addExercise}>
-          Hinzufügen
-        </button>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button className="btn-ghost" onClick={() => setAddExOpen(false)}>
+            Abbrechen
+          </button>
+          <button className="btn-primary" onClick={addExercise}>
+            Hinzufügen
+          </button>
+        </div>
       </Sheet>
 
       {/* Regel B: einzelnen Satz entfernen */}

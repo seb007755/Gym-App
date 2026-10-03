@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getActiveSession } from './db'
@@ -12,6 +13,7 @@ import HistoryDetailPage from './pages/HistoryDetailPage'
 import StatsPage from './pages/StatsPage'
 import SettingsPage from './pages/SettingsPage'
 import { ReloadPrompt } from './components/ReloadPrompt'
+import { SplashScreen } from './components/SplashScreen'
 
 function BottomNav() {
   const active = useLiveQuery(() => getActiveSession(), [])
@@ -58,22 +60,33 @@ export default function App() {
     location.pathname.startsWith('/workout') ||
     location.pathname.startsWith('/summary')
 
+  // Startbildschirm: keine Route, keine Nav-Kachel - erscheint stattdessen bei
+  // jedem App-Start automatisch anstelle der normalen Ansicht. Reiner
+  // Komponenten-State (kein localStorage) -> jeder Reload zeigt ihn erneut.
+  const [showSplash, setShowSplash] = useState(true)
+
   return (
     <div className="mx-auto flex h-full max-w-md flex-col">
-      <main className="flex-1 overflow-y-auto">
-        <Routes>
-          <Route path="/" element={<PlansPage />} />
-          <Route path="/plan/:planId/day/:dayId" element={<PlanDayEditPage />} />
-          <Route path="/start" element={<StartPage />} />
-          <Route path="/workout" element={<ActiveWorkoutPage />} />
-          <Route path="/summary/:sessionId" element={<SummaryPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/history/:sessionId" element={<HistoryDetailPage />} />
-          <Route path="/stats" element={<StatsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </main>
-      {!fullscreen && <BottomNav />}
+      {showSplash ? (
+        <SplashScreen onDismiss={() => setShowSplash(false)} />
+      ) : (
+        <>
+          <main className="flex-1 overflow-y-auto">
+            <Routes>
+              <Route path="/" element={<PlansPage />} />
+              <Route path="/plan/:planId/day/:dayId" element={<PlanDayEditPage />} />
+              <Route path="/start" element={<StartPage />} />
+              <Route path="/workout" element={<ActiveWorkoutPage />} />
+              <Route path="/summary/:sessionId" element={<SummaryPage />} />
+              <Route path="/history" element={<HistoryPage />} />
+              <Route path="/history/:sessionId" element={<HistoryDetailPage />} />
+              <Route path="/stats" element={<StatsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </main>
+          {!fullscreen && <BottomNav />}
+        </>
+      )}
       <ReloadPrompt />
     </div>
   )
