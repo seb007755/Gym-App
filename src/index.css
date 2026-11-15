@@ -29,6 +29,14 @@
   input[type='number'] {
     -moz-appearance: textfield;
   }
+
+  /* Datums-Eingaben: das native Picker-Steuerelement hat auf manchen mobilen
+     Browsern eine Mindest-Eigenbreite, die `w-full` allein nicht begrenzt und
+     die App dadurch horizontal aufreisst (z.B. Geburtsdatum-Feld). */
+  input[type='date'] {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 
 @layer components {

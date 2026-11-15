@@ -303,9 +303,14 @@ export default function HealthPage() {
           </div>
         ) : null}
         {bfError ? <p className="mt-2 text-xs text-warn">{bfError}</p> : null}
-        <button className="btn-primary mt-4 w-full" onClick={submitBodyFat}>
-          Berechnen &amp; speichern
-        </button>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button className="btn-ghost" onClick={() => setBfOpen(false)}>
+            Abbrechen
+          </button>
+          <button className="btn-primary" onClick={submitBodyFat}>
+            Berechnen &amp; speichern
+          </button>
+        </div>
       </Sheet>
     </div>
   )
