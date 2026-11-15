@@ -32,10 +32,22 @@
 
   /* Datums-Eingaben: das native Picker-Steuerelement hat auf manchen mobilen
      Browsern eine Mindest-Eigenbreite, die `w-full` allein nicht begrenzt und
-     die App dadurch horizontal aufreisst (z.B. Geburtsdatum-Feld). */
+     die App dadurch horizontal aufreisst (z.B. Geburtsdatum-Feld). Reiner
+     min/max-width-Reset reichte nicht aus (immer noch zu breit auf dem Geraet)
+     - zusaetzlich die grosse/fette `.input`-Schrift ueberschrieben (vermutlich
+     die eigentliche Ursache: der native Tag/Monat/Jahr+Kalender-Icon-Aufbau
+     braucht bei 18px/semibold mehr Platz, als auf schmalen Handys verfuegbar
+     ist) sowie der WebKit-spezifische `-webkit-min-logical-width`-Reset, der
+     fuer genau dieses iOS-Verhalten dokumentiert ist. */
   input[type='date'] {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
     min-width: 0;
     max-width: 100%;
+    -webkit-min-logical-width: 0;
+    font-size: 1rem;
+    font-weight: 400;
   }
 }
 
@@ -106,4 +118,24 @@
 }
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Tabata: Bildschirm blinkt beim Phasenwechsel zweimal komplett rot - Ersatz/
+   Ergaenzung zur Vibration, die auf iOS nicht existiert. Zwei Opazitaets-
+   Spitzen in einem einzigen Animationsdurchlauf (nicht per iteration-count
+   wiederholt), damit die Dauer exakt planbar bleibt. */
+@keyframes tabata-flash {
+  0%,
+  20%,
+  40%,
+  100% {
+    opacity: 0;
+  }
+  10%,
+  30% {
+    opacity: 0.92;
+  }
+}
+.tabata-flash {
+  animation: tabata-flash 0.9s ease-in-out 1;
 }

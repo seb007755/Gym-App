@@ -29,6 +29,7 @@ import { downloadBackup, importBackup, type ImportResult } from '../lib/backup'
 import type { Exercise } from '../types'
 import { TopBar, Sheet, Confirm } from '../components/ui'
 import { PlusIcon, TrashIcon } from '../components/icons'
+import { dateInputValue, parseDateInput } from '../lib/format'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
@@ -197,6 +198,47 @@ export default function SettingsPage() {
       <TopBar title="Einstellungen" />
 
       <div className="space-y-4 p-4">
+        {/* Sicherung: ganz oben, meistgenutzter Punkt */}
+        <section className="card">
+          <h2 className="mb-3 font-bold">Sicherung</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <button className="btn-primary" onClick={() => downloadBackup()}>
+              Exportieren
+            </button>
+            <button className="btn-ghost" onClick={() => fileRef.current?.click()}>
+              Datei importieren
+            </button>
+          </div>
+          <button
+            className="btn-ghost mt-2 w-full"
+            onClick={() => { setPasteVal(''); setImportErr(null); setPasteOpen(true) }}
+          >
+            Aus Text einfügen
+          </button>
+          <p className="mt-2 text-xs text-neutral-500">
+            Cloud-Import (OneDrive, Drive …): „Datei importieren" öffnet den
+            System-Dateipicker – dort oben die Quelle wechseln. Falls die Cloud
+            dort nicht auftaucht, die Sicherung öffnen, den Inhalt kopieren und
+            hier „Aus Text einfügen".
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="*/*"
+            className="hidden"
+            onChange={onPickFile}
+          />
+          {counts ? (
+            <p className="mt-3 text-xs text-neutral-500">
+              Gespeichert: {counts.plans} Pläne · {counts.sessions} Trainings ·{' '}
+              {counts.exercises} Übungen
+            </p>
+          ) : null}
+          {importErr ? (
+            <p className="mt-2 text-sm text-red-400">{importErr}</p>
+          ) : null}
+        </section>
+
         {/* Datenschutz-Hinweis */}
         <section className="card border-brand/40 bg-brand/5">
           <h2 className="mb-1 font-bold text-brand">Deine Daten bleiben lokal</h2>
@@ -218,6 +260,41 @@ export default function SettingsPage() {
           <button className="btn-ghost w-full" onClick={() => navigate('/')}>
             Trainingspläne verwalten
           </button>
+        </section>
+
+        {/* Profil: Geschlecht + Geburtsdatum, nur fuer die Koerperfett-Berechnung
+            im Health-Tab benoetigt, aber hier zentral mit den anderen
+            persoenlichen Angaben verwaltet. */}
+        <section className="card">
+          <h2 className="mb-1 font-bold">Profil</h2>
+          <p className="mb-3 text-xs text-muted">
+            Wird für die Körperfett-Berechnung im Health-Tab benötigt.
+          </p>
+          <label className="label">Geschlecht</label>
+          <div className="mb-3 flex gap-2">
+            <button
+              className={'chip flex-1 justify-center ' + (settings?.sex === 'male' ? 'chip-active' : '')}
+              onClick={() => saveSettings({ sex: 'male' })}
+            >
+              Männlich
+            </button>
+            <button
+              className={'chip flex-1 justify-center ' + (settings?.sex === 'female' ? 'chip-active' : '')}
+              onClick={() => saveSettings({ sex: 'female' })}
+            >
+              Weiblich
+            </button>
+          </div>
+          <label className="label">Geburtsdatum</label>
+          <input
+            className="input"
+            type="date"
+            value={settings?.birthDate ? dateInputValue(settings.birthDate) : ''}
+            onChange={(e) => {
+              if (!e.target.value) return
+              saveSettings({ birthDate: parseDateInput(e.target.value) })
+            }}
+          />
         </section>
 
         {/* Training */}
@@ -295,47 +372,6 @@ export default function SettingsPage() {
             Beenden eines Trainings festgeschrieben – Änderungen hier gelten nur
             für zukünftige Trainings.
           </p>
-        </section>
-
-        {/* Backup */}
-        <section className="card">
-          <h2 className="mb-3 font-bold">Sicherung</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <button className="btn-primary" onClick={() => downloadBackup()}>
-              Exportieren
-            </button>
-            <button className="btn-ghost" onClick={() => fileRef.current?.click()}>
-              Datei importieren
-            </button>
-          </div>
-          <button
-            className="btn-ghost mt-2 w-full"
-            onClick={() => { setPasteVal(''); setImportErr(null); setPasteOpen(true) }}
-          >
-            Aus Text einfügen
-          </button>
-          <p className="mt-2 text-xs text-neutral-500">
-            Cloud-Import (OneDrive, Drive …): „Datei importieren" öffnet den
-            System-Dateipicker – dort oben die Quelle wechseln. Falls die Cloud
-            dort nicht auftaucht, die Sicherung öffnen, den Inhalt kopieren und
-            hier „Aus Text einfügen".
-          </p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="*/*"
-            className="hidden"
-            onChange={onPickFile}
-          />
-          {counts ? (
-            <p className="mt-3 text-xs text-neutral-500">
-              Gespeichert: {counts.plans} Pläne · {counts.sessions} Trainings ·{' '}
-              {counts.exercises} Übungen
-            </p>
-          ) : null}
-          {importErr ? (
-            <p className="mt-2 text-sm text-red-400">{importErr}</p>
-          ) : null}
         </section>
 
         {/* Orte */}

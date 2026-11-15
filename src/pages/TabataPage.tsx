@@ -32,6 +32,11 @@ export default function TabataPage() {
 
   const [run, setRun] = useState<RunState>({ phase: 'idle', round: 1, endsAt: null })
   const [left, setLeft] = useState(0)
+  // Bildschirm-Blinken (zweimal komplett rot) bei Phasenwechsel - zusaetzlich
+  // zur Vibration, da die Vibration-API auf iOS nicht existiert. Hochzaehlen
+  // statt true/false, damit ein neuer Wechsel waehrend eines laufenden
+  // Blinkens die Animation per "key" zuverlaessig neu startet.
+  const [flashSeq, setFlashSeq] = useState(0)
   // Config waehrend eines laufenden Durchgangs einfrieren - eine Aenderung
   // mitten im Lauf soll die laufende Runde nicht verwirren.
   const cfg = useRef({ workSeconds, restSeconds, rounds })
@@ -64,13 +69,17 @@ export default function TabataPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.endsAt, run.phase])
 
-  // Vibration getrennt von der State-Transition als eigener Effekt (reagiert
-  // auf den Phasenwechsel, statt Seiteneffekte im State-Updater zu verstecken).
+  // Vibration + Bildschirm-Blinken getrennt von der State-Transition als
+  // eigener Effekt (reagiert auf den Phasenwechsel, statt Seiteneffekte im
+  // State-Updater zu verstecken).
   const prevPhase = useRef<Phase>('idle')
   useEffect(() => {
     if (run.phase !== prevPhase.current) {
       if (run.phase === 'work' || run.phase === 'rest') vibrate(200)
       else if (run.phase === 'done') vibrate([200, 100, 200, 100, 200])
+      if (run.phase === 'work' || run.phase === 'rest' || run.phase === 'done') {
+        setFlashSeq((n) => n + 1)
+      }
       prevPhase.current = run.phase
     }
   }, [run.phase])
@@ -107,6 +116,13 @@ export default function TabataPage() {
 
   return (
     <div>
+      {flashSeq > 0 ? (
+        <div
+          key={flashSeq}
+          aria-hidden
+          className="tabata-flash pointer-events-none fixed inset-0 z-50 bg-brand"
+        />
+      ) : null}
       <TopBar title="Tabata" />
 
       <div

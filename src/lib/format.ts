@@ -50,3 +50,17 @@ const searchDateFmt = new Intl.DateTimeFormat('de-DE', {
 export function formatDateSearch(ts: number): string {
   return searchDateFmt.format(new Date(ts))
 }
+
+// Fuer <input type="date">: "YYYY-MM-DD" <-> Zeitstempel, lokale Zeitzone
+// (nicht UTC, sonst verschiebt sich das Datum je nach Tageszeit/Zeitzone).
+export function dateInputValue(ts: number): string {
+  const d = new Date(ts)
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+
+export function parseDateInput(value: string): number {
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d).getTime()
+}

@@ -36,6 +36,15 @@ kein Login, keine Tracker. Umgesetzt nach [`gym-app-spec.md`](./gym-app-spec.md)
 - **Startbildschirm** – bei jedem App-Start ein zufälliges Motivations-Zitat (aus
   100, Training/Kraft/mentale Stärke) plus direkter Schnellstart (Plan + Ort), ohne
   erst zur normalen Trainings-Seite wechseln zu müssen.
+- **Tabata-Timer** – eigener Tab, konfigurierbare Belastung/Pause/Runden, Vibration
+  bei Phasenwechsel (Android; iOS unterstützt die Vibration-API nicht) plus
+  zweimaliges rotes Bildschirm-Blinken als plattformunabhängiges Zusatzsignal.
+- **Health** – Gewichtsverlauf mit Datum, drei farblich hinterlegte Phasen
+  (Aufbau/Diät/Halten), dazu Körperfett-Tracking per Caliper (3-/7-Punkt-Methode,
+  Jackson-Pollock + Siri-Formel). Geschlecht/Geburtsdatum dafür werden in den
+  Einstellungen gepflegt.
+- **Einstellungen: Sicherung zuerst** – die Backup-Export/Import-Sektion steht als
+  meistgenutzter Punkt ganz oben.
 
 ## Datenschutz
 

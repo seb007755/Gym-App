@@ -99,19 +99,31 @@ Klare Trennung zwischen **Vorlage** (Plan) und **Instanz** (durchgeführtes Trai
 
 ## 8. Views / Screens
 
-1. **Pläne / Split verwalten**
-   - Trainingstage anlegen/bearbeiten/löschen, Übungen je Tag mit Zielwerten zuweisen, Reihenfolge sortierbar.
-2. **Training starten / aktives Training**
+**Stand v2.3 — Bottom-Nav-Reihenfolge (6 Tabs):** Training, Statistik, Verlauf,
+Tabata, Health, Einstellungen. Davor, ohne eigenen Nav-Eintrag: der Startbildschirm.
+"Pläne" ist seit v2.3 kein eigener Tab mehr, sondern über Einstellungen erreichbar
+(Route `/` unverändert, siehe Abschnitt 12.7).
+
+0. **Startbildschirm** (kein Nav-Eintrag, siehe Abschnitt 12.6) — erscheint bei
+   jedem App-Start, Zitat + Schnellstart; "Tippen zum Fortfahren" führt zu 1.
+1. **Training starten / aktives Training**
    - Trainingstag wählen → Ort + Hersteller bestätigen/ändern → Session startet (Timer läuft).
    - Satz-für-Satz abhaken, Werte inline anpassen, Übung/Satz live ergänzen oder tauschen.
    - **SOLL**: optionaler Rest-Timer pro Satz.
    - „Freies Training" ohne Plan **KANN** möglich sein.
-3. **Training beenden → Zusammenfassung** (Abschnitt 6).
-4. **Verlauf**
+   - Training beenden → Zusammenfassung (Abschnitt 6, kein eigener Nav-Eintrag).
+2. **Statistik**
+   - Kalender, Kennzahlen, Rekorde, Stagnations-Erkennung, Trainingstag-Balance,
+     Übungsverlauf; KI-Export (Abschnitt 12.3) und Bild-Export.
+3. **Verlauf**
    - Liste vergangener Sessions nach Datum, mit Ort/Hersteller/Dauer; Detailansicht je Session.
    - **KANN**: einfacher Verlauf pro Übung (Gewicht über Zeit). Nicht im Mindestumfang.
-5. **Einstellungen**
-   - Export / Import, Liste der Orte und Hersteller pflegen.
+4. **Tabata** (Abschnitt 12.7) — konfigurierbarer Intervall-Timer, kein Bezug zu
+   Plänen/Sessions.
+5. **Health** (Abschnitt 12.8) — Gewicht, Phasen, Körperfett per Caliper.
+6. **Einstellungen**
+   - Export / Import, Orte/Hersteller/Übungen/Home-Gym pflegen (Abschnitt 12.5),
+     Trainingspläne verwalten (Abschnitt 12.7).
 
 ---
 
@@ -150,7 +162,7 @@ Die erste lauffähige Version gilt als fertig, wenn:
 
 ---
 
-## 12. Nachträge v2.1 / v2.2
+## 12. Nachträge v2.1 / v2.2 / v2.3
 
 Ergänzt nach dem Mindestumfang (Abschnitt 11), ohne die dortigen Punkte zu ändern. Alle
 neuen Felder sind additiv (kein Dexie-Versionssprung, bestehende Backups bleiben
@@ -189,9 +201,16 @@ importierbar — Grundsatz aus Abschnitt 2 gilt unverändert).
 
 ### 12.3 KI-Markdown-Export
 - Zusätzlicher Export (neben dem bestehenden JSON-Backup, Abschnitt 7): eine Textdatei
-  mit Analyse-Anweisungen, frei hinzufügbaren Fragen und den Trainingsdaten, zum
-  manuellen Einfügen in eine externe KI. Keine KI-Anbindung in der App, kein
-  automatischer Versand.
+  mit Analyse-Anweisungen, frei hinzufügbaren Fragen (`AppSettings.aiQuestions`,
+  additiv, wird wie alle Settings-Felder mit dem JSON-Backup gesichert) und den
+  Trainingsdaten, zum manuellen Einfügen in eine externe KI. Keine KI-Anbindung in
+  der App, kein automatischer Versand.
+- Enthält zwingend auch nicht getrackte Einheiten (Personal-/Lauf-Training o. Ä.) als
+  eigenen Abschnitt, nicht nur die Gym-Sessions — sonst bewertet eine externe KI die
+  Trainingsfrequenz/-balance fälschlich als zu gering.
+- Teilen-Dialog übergibt den Inhalt sowohl als Datei als auch als Text (manche
+  Ziel-Apps lesen Datei-Anhänge nicht zuverlässig aus); „Kopieren in die
+  Zwischenablage" bleibt der robusteste Weg.
 
 ### 12.4 Trainingstag-Zuordnung je Einheit-Typ
 - Bei "Weitere Einheiten" (nicht getrackte Einheiten wie Personal-/Lauf-Training) ist
@@ -211,6 +230,52 @@ importierbar — Grundsatz aus Abschnitt 2 gilt unverändert).
   jedem App-Start automatisch anstelle der normalen Ansicht (kein Bottom-Nav sichtbar),
   zeigt eines von 100 statisch mitgelieferten Zitaten zu Training/Kraft/mentaler
   Stärke/Motivation (zufällig gewählt, kein Laufzeit-Netzwerkzugriff — Grundsatz aus
-  Abschnitt 1/2). Antippen des Hintergrunds führt zur normalen App; zusätzlich bietet
-  der Bildschirm einen vollwertigen Schnellstart (Plan, Trainingstag, Ort, Hersteller),
-  der direkt eine Session anlegt und ins aktive Training wechselt.
+  Abschnitt 1/2). Antippen des Hintergrunds führt gezielt zum Training-Tab (Abschnitt
+  8, View 1) — nicht zur zuvor aktiven Route; zusätzlich bietet der Bildschirm einen
+  vollwertigen Schnellstart (Plan, Trainingstag, Ort, Hersteller), der direkt eine
+  Session anlegt und ins aktive Training wechselt.
+
+### 12.7 Tabata-Timer (eigener Tab)
+- Einfacher Intervall-Timer, unabhängig von Plänen/Sessions: konfigurierbare
+  Belastungs-/Pausenzeit + Rundenzahl (additiv in `AppSettings`, Default 20 s/10 s/
+  8 Runden), 5 s fester Vorbereitungs-Countdown vor der ersten Runde.
+  Absolute-Zielzeit-Timer (wie der bestehende Rest-Timer im aktiven Training) statt
+  Herunterzählen, damit Backgrounding die Anzeige nicht verfälscht.
+- Bei jedem Phasenwechsel (Belastung↔Pause, Ende) Vibration via `navigator.vibrate`,
+  **kein** Ton. Bekannte Plattform-Einschränkung: die Vibration-API existiert auf
+  iOS Safari/PWA nicht — dort rein visuell (Farbwechsel + Countdown). Zusätzliches,
+  plattformunabhängiges Signal: der Bildschirm blinkt bei jedem Phasenwechsel zweimal
+  komplett rot (`.tabata-flash`-Overlay, per `flashSeq`-Zähler + `key`-Prop neu
+  gestartet, damit schnell aufeinanderfolgende Wechsel die Animation zuverlässig
+  erneuern).
+- Verdrängt "Pläne" aus der unteren Leiste (Abschnitt 8) — Pläne bleiben über
+  Einstellungen → "Trainingspläne verwalten" erreichbar, Route `/` unverändert.
+
+### 12.8 Health: Gewicht, Phasen, Körperfett per Caliper
+- Neue Dexie-Tabellen (Version 3): `weightEntries` (Datum ohne Uhrzeit + kg, ein
+  Eintrag pro Tag), `phaseChanges` (Datum + Phase `aufbau`/`diät`/`halten`),
+  `bodyFatEntries` (Datum, Caliper-Methode, Hautfalten-Messwerte, berechneter und
+  eingefrorener Körperfett-%-Wert). Neue Backup-Version 4 (additiv, ältere
+  Sicherungen bleiben importierbar).
+- **Phasen-Modell:** der Nutzer schaltet die aktuell gültige Phase um (ein Datensatz
+  pro Wechsel); die farbigen, halbtransparenten Hintergrundbänder im Gewichts-Chart
+  ergeben sich automatisch aus den Zeiträumen zwischen den Wechseln (keine manuelle
+  Start/Ende-Verwaltung). `components/charts.tsx`s `LineChart` hat dafür ein
+  optionales `bands`-Prop erhalten.
+- **Körperfett-Berechnung:** Jackson-Pollock-Formeln (3- oder 7-Punkt-Methode, je
+  Geschlecht unterschiedliche Koeffizienten/Messstellen) + Siri-Gleichung zur
+  Umrechnung von Körperdichte in Körperfett-% — die verbreitetste Standard-Referenz
+  für Caliper-Schätzungen. Benötigt Geschlecht + Geburtsdatum (additiv in
+  `AppSettings`); das Alter wird je Messung aus dem Geburtsdatum berechnet, nicht
+  einmalig gespeichert, damit die Historie bei einer späteren Korrektur konsistent
+  bleibt. Die Editier-UI für Geschlecht/Geburtsdatum liegt in den Einstellungen
+  (Abschnitt 8/12.9, nicht im Health-Tab) — Health liest die Werte nur noch, um den
+  Caliper-Bereich freizuschalten.
+
+### 12.9 Einstellungen: Reihenfolge der Sektionen
+- "Sicherung" (Backup-Export/Import) ist die erste Sektion auf der Einstellungen-Seite
+  (meistgenutzter Punkt). Direkt danach "Trainingspläne verwalten" und "Profil"
+  (Geschlecht-Chips + Geburtsdatum, via `lib/format.ts`s `dateInputValue`/
+  `parseDateInput` geteilt mit dem Health-Tab), dann die übrigen Sektionen
+  (Datenschutz-Hinweis, Training, Orte, Home-Gym, Weitere Einheiten, Geräte-
+  Hersteller, Übungen) wie zuvor.

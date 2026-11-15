@@ -4,9 +4,7 @@ import {
   addBodyFatEntry,
   computePhaseBands,
   db,
-  dayKey,
   getSettings,
-  saveSettings,
   setCurrentPhase,
   upsertWeightEntry,
 } from '../db'
@@ -14,7 +12,7 @@ import { CALIPER_SITES } from '../lib/bodyFat'
 import type { BodyPhase, CaliperMethod } from '../types'
 import { TopBar, Sheet } from '../components/ui'
 import { LineChart, Legend, type ChartBand } from '../components/charts'
-import { formatDate } from '../lib/format'
+import { formatDate, dateInputValue, parseDateInput } from '../lib/format'
 import { PlusIcon } from '../components/icons'
 
 const PHASE_LABEL: Record<BodyPhase, string> = {
@@ -40,26 +38,18 @@ const SITE_LABEL: Record<string, string> = {
   subscapular: 'Schulterblatt',
 }
 
-function toDateInputValue(ts: number): string {
-  return dayKey(ts)
-}
-function parseDateInputValue(value: string): number {
-  const [y, m, d] = value.split('-').map(Number)
-  return new Date(y, m - 1, d).getTime()
-}
-
 export default function HealthPage() {
   const settings = useLiveQuery(() => getSettings(), [])
   const weightEntries = useLiveQuery(() => db.weightEntries.toArray(), [])
   const phaseChanges = useLiveQuery(() => db.phaseChanges.toArray(), [])
   const bodyFatEntries = useLiveQuery(() => db.bodyFatEntries.toArray(), [])
 
-  const [weightDate, setWeightDate] = useState(() => toDateInputValue(Date.now()))
+  const [weightDate, setWeightDate] = useState(() => dateInputValue(Date.now()))
   const [weightVal, setWeightVal] = useState('')
 
   const [bfOpen, setBfOpen] = useState(false)
   const [bfMethod, setBfMethod] = useState<CaliperMethod>('3-punkt')
-  const [bfDate, setBfDate] = useState(() => toDateInputValue(Date.now()))
+  const [bfDate, setBfDate] = useState(() => dateInputValue(Date.now()))
   const [bfSites, setBfSites] = useState<Record<string, string>>({})
   const [bfError, setBfError] = useState<string | null>(null)
 
@@ -98,12 +88,12 @@ export default function HealthPage() {
   async function submitWeight() {
     const kg = parseFloat(weightVal.replace(',', '.'))
     if (!kg || kg <= 0) return
-    await upsertWeightEntry(parseDateInputValue(weightDate), kg)
+    await upsertWeightEntry(parseDateInput(weightDate), kg)
     setWeightVal('')
   }
 
   function openBodyFat() {
-    setBfDate(toDateInputValue(Date.now()))
+    setBfDate(dateInputValue(Date.now()))
     setBfSites({})
     setBfError(null)
     setBfOpen(true)
@@ -121,7 +111,7 @@ export default function HealthPage() {
       }
       sites[k] = v
     }
-    const entry = await addBodyFatEntry(parseDateInputValue(bfDate), bfMethod, sites)
+    const entry = await addBodyFatEntry(parseDateInput(bfDate), bfMethod, sites)
     if (!entry) {
       setBfError('Profil (Geschlecht + Geburtsdatum) fehlt.')
       return
@@ -134,39 +124,6 @@ export default function HealthPage() {
       <TopBar title="Health" />
 
       <div className="space-y-4 p-4">
-        {/* Profil - nur fuer die Koerperfett-Berechnung noetig */}
-        <section className="card">
-          <h2 className="mb-1 font-bold">Profil</h2>
-          <p className="mb-3 text-xs text-muted">
-            Wird nur für die Körperfett-Berechnung aus den Caliper-Werten benötigt.
-          </p>
-          <label className="label">Geschlecht</label>
-          <div className="mb-3 flex gap-2">
-            <button
-              className={'chip flex-1 justify-center ' + (sex === 'male' ? 'chip-active' : '')}
-              onClick={() => saveSettings({ sex: 'male' })}
-            >
-              Männlich
-            </button>
-            <button
-              className={'chip flex-1 justify-center ' + (sex === 'female' ? 'chip-active' : '')}
-              onClick={() => saveSettings({ sex: 'female' })}
-            >
-              Weiblich
-            </button>
-          </div>
-          <label className="label">Geburtsdatum</label>
-          <input
-            className="input"
-            type="date"
-            value={settings?.birthDate ? toDateInputValue(settings.birthDate) : ''}
-            onChange={(e) => {
-              if (!e.target.value) return
-              saveSettings({ birthDate: parseDateInputValue(e.target.value) })
-            }}
-          />
-        </section>
-
         {/* Phase */}
         <section className="card">
           <h2 className="mb-1 font-bold">Phase</h2>
@@ -239,7 +196,9 @@ export default function HealthPage() {
             </button>
           </div>
           {!profileComplete ? (
-            <p className="text-xs text-warn">Erst Geschlecht + Geburtsdatum im Profil eintragen.</p>
+            <p className="text-xs text-warn">
+              Erst Geschlecht + Geburtsdatum in den Einstellungen eintragen.
+            </p>
           ) : null}
           {bodyFatSeries[0].points.length > 0 ? (
             <>
