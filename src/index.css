@@ -137,5 +137,6 @@
   }
 }
 .tabata-flash {
-  animation: tabata-flash 0.9s ease-in-out 1;
+  opacity: 0;
+  animation: tabata-flash 0.9s ease-in-out 1 forwards;
 }

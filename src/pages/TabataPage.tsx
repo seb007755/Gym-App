@@ -37,6 +37,7 @@ export default function TabataPage() {
   // statt true/false, damit ein neuer Wechsel waehrend eines laufenden
   // Blinkens die Animation per "key" zuverlaessig neu startet.
   const [flashSeq, setFlashSeq] = useState(0)
+  const [flashOn, setFlashOn] = useState(false)
   // Config waehrend eines laufenden Durchgangs einfrieren - eine Aenderung
   // mitten im Lauf soll die laufende Runde nicht verwirren.
   const cfg = useRef({ workSeconds, restSeconds, rounds })
@@ -79,6 +80,7 @@ export default function TabataPage() {
       else if (run.phase === 'done') vibrate([200, 100, 200, 100, 200])
       if (run.phase === 'work' || run.phase === 'rest' || run.phase === 'done') {
         setFlashSeq((n) => n + 1)
+        setFlashOn(true)
       }
       prevPhase.current = run.phase
     }
@@ -116,10 +118,11 @@ export default function TabataPage() {
 
   return (
     <div>
-      {flashSeq > 0 ? (
+      {flashOn ? (
         <div
           key={flashSeq}
           aria-hidden
+          onAnimationEnd={() => setFlashOn(false)}
           className="tabata-flash pointer-events-none fixed inset-0 z-50 bg-brand"
         />
       ) : null}
