@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getActiveSession } from './db'
-import { ChartIcon, ClockIcon, CogIcon, DumbbellIcon, PlayIcon } from './components/icons'
+import {
+  ChartIcon,
+  ClockIcon,
+  CogIcon,
+  HeartIcon,
+  PlayIcon,
+  TimerIcon,
+} from './components/icons'
 import PlansPage from './pages/PlansPage'
 import PlanDayEditPage from './pages/PlanDayEditPage'
 import StartPage from './pages/StartPage'
@@ -12,6 +19,8 @@ import HistoryPage from './pages/HistoryPage'
 import HistoryDetailPage from './pages/HistoryDetailPage'
 import StatsPage from './pages/StatsPage'
 import SettingsPage from './pages/SettingsPage'
+import TabataPage from './pages/TabataPage'
+import HealthPage from './pages/HealthPage'
 import { ReloadPrompt } from './components/ReloadPrompt'
 import { SplashScreen } from './components/SplashScreen'
 
@@ -21,12 +30,15 @@ function BottomNav() {
     { to: '/start', label: 'Training', icon: PlayIcon },
     { to: '/stats', label: 'Statistik', icon: ChartIcon },
     { to: '/history', label: 'Verlauf', icon: ClockIcon },
-    { to: '/', label: 'Pläne', icon: DumbbellIcon, end: true },
+    { to: '/tabata', label: 'Tabata', icon: TimerIcon },
+    { to: '/health', label: 'Health', icon: HeartIcon },
     { to: '/settings', label: 'Einstellungen', icon: CogIcon },
   ]
+  // Keine Route hier ist "/", "end" (frueher fuer die Plaene-Kachel noetig) wird
+  // nicht mehr gebraucht.
   return (
     <nav className="pb-safe sticky bottom-0 z-30 border-t border-line bg-bg/95 backdrop-blur">
-      <div className="mx-auto grid max-w-md grid-cols-5">
+      <div className="mx-auto grid max-w-md grid-cols-6">
         {items.map((it) => {
           const Icon = it.icon
           const showDot = it.to === '/start' && active
@@ -34,7 +46,6 @@ function BottomNav() {
             <NavLink
               key={it.to}
               to={it.to}
-              end={it.end}
               className={({ isActive }) =>
                 'relative flex min-w-0 flex-col items-center gap-0.5 px-1 py-2.5 text-[10px] font-medium ' +
                 (isActive ? 'text-brand' : 'text-neutral-500')
@@ -81,6 +92,8 @@ export default function App() {
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/history/:sessionId" element={<HistoryDetailPage />} />
               <Route path="/stats" element={<StatsPage />} />
+              <Route path="/tabata" element={<TabataPage />} />
+              <Route path="/health" element={<HealthPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
           </main>

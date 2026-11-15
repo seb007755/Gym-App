@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   DEFAULT_ACTIVITY_TYPES,
@@ -30,6 +31,7 @@ import { TopBar, Sheet, Confirm } from '../components/ui'
 import { PlusIcon, TrashIcon } from '../components/icons'
 
 export default function SettingsPage() {
+  const navigate = useNavigate()
   const settings = useLiveQuery(() => getSettings(), [])
   const autoHomeLocation = useLiveQuery(() => getAutoHomeLocation(), [])
   const counts = useLiveQuery(async () => ({
@@ -205,6 +207,17 @@ export default function SettingsPage() {
             regelmäßig, sonst gehen die Daten beim Löschen der Browserdaten oder
             Gerätewechsel verloren.
           </p>
+        </section>
+
+        {/* Pläne: seit v2.3 nicht mehr in der unteren Leiste, dafuer hier erreichbar. */}
+        <section className="card">
+          <h2 className="mb-1 font-bold">Trainingspläne</h2>
+          <p className="mb-3 text-xs text-muted">
+            Split, Trainingstage und Zielwerte verwalten.
+          </p>
+          <button className="btn-ghost w-full" onClick={() => navigate('/')}>
+            Trainingspläne verwalten
+          </button>
         </section>
 
         {/* Training */}

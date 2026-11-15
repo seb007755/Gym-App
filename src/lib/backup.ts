@@ -1,16 +1,20 @@
 import { db, getSettings, runMigrations } from '../db'
 import type { BackupFile } from '../types'
 
-const BACKUP_VERSION = 3
+const BACKUP_VERSION = 4
 
 export async function exportBackup(): Promise<BackupFile> {
-  const [exercises, plans, sessions, activities, settings] = await Promise.all([
-    db.exercises.toArray(),
-    db.plans.toArray(),
-    db.sessions.toArray(),
-    db.activities.toArray(),
-    getSettings(),
-  ])
+  const [exercises, plans, sessions, activities, weightEntries, phaseChanges, bodyFatEntries, settings] =
+    await Promise.all([
+      db.exercises.toArray(),
+      db.plans.toArray(),
+      db.sessions.toArray(),
+      db.activities.toArray(),
+      db.weightEntries.toArray(),
+      db.phaseChanges.toArray(),
+      db.bodyFatEntries.toArray(),
+      getSettings(),
+    ])
   return {
     app: 'gym-tracker',
     version: BACKUP_VERSION,
@@ -19,6 +23,9 @@ export async function exportBackup(): Promise<BackupFile> {
     plans,
     sessions,
     activities,
+    weightEntries,
+    phaseChanges,
+    bodyFatEntries,
     settings,
   }
 }
@@ -63,11 +70,16 @@ export async function importBackup(
 
   await db.transaction(
     'rw',
-    db.exercises,
-    db.plans,
-    db.sessions,
-    db.activities,
-    db.settings,
+    [
+      db.exercises,
+      db.plans,
+      db.sessions,
+      db.activities,
+      db.weightEntries,
+      db.phaseChanges,
+      db.bodyFatEntries,
+      db.settings,
+    ],
     async () => {
       if (replace) {
         await Promise.all([
@@ -75,6 +87,9 @@ export async function importBackup(
           db.plans.clear(),
           db.sessions.clear(),
           db.activities.clear(),
+          db.weightEntries.clear(),
+          db.phaseChanges.clear(),
+          db.bodyFatEntries.clear(),
         ])
       }
       if (data.exercises?.length) await db.exercises.bulkPut(data.exercises)
@@ -82,6 +97,10 @@ export async function importBackup(
       if (data.sessions?.length) await db.sessions.bulkPut(data.sessions)
       // Erst ab Backup v3 vorhanden - aeltere Sicherungen haben das Feld nicht.
       if (data.activities?.length) await db.activities.bulkPut(data.activities)
+      // Erst ab Backup v4 vorhanden - aeltere Sicherungen haben die Felder nicht.
+      if (data.weightEntries?.length) await db.weightEntries.bulkPut(data.weightEntries)
+      if (data.phaseChanges?.length) await db.phaseChanges.bulkPut(data.phaseChanges)
+      if (data.bodyFatEntries?.length) await db.bodyFatEntries.bulkPut(data.bodyFatEntries)
       if (data.settings) await db.settings.put(data.settings)
     },
   )

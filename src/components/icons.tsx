@@ -176,3 +176,20 @@ export function ClipboardIcon({ className }: P) {
     </svg>
   )
 }
+
+export function TimerIcon({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v4l3 2M10 2h4" />
+    </svg>
+  )
+}
+
+export function HeartIcon({ className }: P) {
+  return (
+    <svg className={className ?? base} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20.5s-7.5-4.6-10-9.3C.5 7.8 2.4 4.5 5.8 4c2-.3 3.9.7 6.2 3.1C14.3 4.7 16.2 3.7 18.2 4c3.4.5 5.3 3.8 3.8 7.2-2.5 4.7-10 9.3-10 9.3Z" />
+    </svg>
+  )
+}

@@ -2,12 +2,17 @@ import Dexie, { type Table } from 'dexie'
 import type {
   Activity,
   AppSettings,
+  BodyFatEntry,
+  BodyPhase,
+  CaliperMethod,
   Exercise,
   Plan,
   PlanExercise,
   PrefillTier,
   SessionExercise,
   SetLog,
+  WeightEntry,
+  PhaseChange,
   WorkoutSession,
 } from './types'
 import {
@@ -15,6 +20,7 @@ import {
   DEFAULT_MET,
   calcCalories,
 } from './lib/calories'
+import { computeBodyFatPercent, ageInYears } from './lib/bodyFat'
 
 // Alles rein lokal in IndexedDB. Keine Netzwerkuebertragung.
 export class GymDB extends Dexie {
@@ -23,6 +29,9 @@ export class GymDB extends Dexie {
   sessions!: Table<WorkoutSession, string>
   settings!: Table<AppSettings, string>
   activities!: Table<Activity, string>
+  weightEntries!: Table<WeightEntry, string>
+  phaseChanges!: Table<PhaseChange, string>
+  bodyFatEntries!: Table<BodyFatEntry, string>
 
   constructor() {
     super('gym-tracker')
@@ -37,6 +46,13 @@ export class GymDB extends Dexie {
     // vorhandene Daten werden nicht angefasst.
     this.version(2).stores({
       activities: 'id, date, type',
+    })
+    // v3 fuegt nur drei Tabellen hinzu (Health: Gewicht/Phasen/Koerperfett) -
+    // Bestehendes bleibt unangetastet.
+    this.version(3).stores({
+      weightEntries: 'id, date',
+      phaseChanges: 'id, date',
+      bodyFatEntries: 'id, date',
     })
   }
 }
@@ -910,4 +926,55 @@ export async function finishSession(id: string): Promise<void> {
 
 export async function discardSession(id: string): Promise<void> {
   await db.sessions.delete(id)
+}
+
+// ---- Health: Gewicht, Phasen, Koerperfett ----
+
+export async function upsertWeightEntry(date: number, weightKg: number): Promise<void> {
+  const id = dayKey(dayStart(date))
+  await db.weightEntries.put({ id, date: dayStart(date), weightKg })
+}
+
+export async function setCurrentPhase(date: number, phase: BodyPhase): Promise<void> {
+  const id = dayKey(dayStart(date))
+  await db.phaseChanges.put({ id, date: dayStart(date), phase })
+}
+
+// Pflicht-Vorbedingung sex/birthDate wird in der UI geprueft (Profil-Karte) -
+// hier wird nur noch defensiv auf fehlende Werte reagiert.
+export async function addBodyFatEntry(
+  date: number,
+  method: CaliperMethod,
+  sites: BodyFatEntry['sites'],
+): Promise<BodyFatEntry | null> {
+  const settings = await getSettings()
+  if (!settings.sex || !settings.birthDate) return null
+  const age = ageInYears(settings.birthDate, date)
+  const bodyFatPercent = computeBodyFatPercent(method, sites, age, settings.sex)
+  const entry: BodyFatEntry = { id: uid(), date: dayStart(date), method, sites, bodyFatPercent }
+  await db.bodyFatEntries.put(entry)
+  return entry
+}
+
+export interface PhaseBand {
+  start: number
+  end: number
+  phase: BodyPhase
+}
+
+// Faltet die Phasenwechsel-Liste (beliebige Reihenfolge) zu Zeitraum-Segmenten
+// fuers Chart. Letztes Segment bleibt bis `rangeEnd` ("heute") offen; vor dem
+// ersten Phasenwechsel ist keine Phase bekannt -> kein Segment dort.
+export function computePhaseBands(
+  phaseChanges: PhaseChange[],
+  rangeEnd: number,
+): PhaseBand[] {
+  const asc = [...phaseChanges].sort((a, b) => a.date - b.date)
+  const bands: PhaseBand[] = []
+  for (let i = 0; i < asc.length; i++) {
+    const start = asc[i].date
+    const end = i + 1 < asc.length ? asc[i + 1].date : Math.max(rangeEnd, start)
+    bands.push({ start, end, phase: asc[i].phase })
+  }
+  return bands
 }

@@ -155,6 +155,53 @@ export interface AppSettings {
   // Leer oder zeigt auf einen geloeschten Ort -> automatische Ermittlung
   // (siehe getHomeLocation in db.ts).
   homeLocation?: string
+  // Tabata-Timer: zuletzt genutzte/Standard-Werte, additiv, Default 20/10/8.
+  tabataWorkSeconds?: number
+  tabataRestSeconds?: number
+  tabataRounds?: number
+  // Health-Profil, nur fuer die Koerperfett-Berechnung (lib/bodyFat.ts) noetig.
+  // Alter wird je Messung aus birthDate + Messdatum berechnet, nicht einmalig
+  // gespeichert, damit die Historie auch rueckwirkend korrekt bleibt.
+  sex?: 'male' | 'female'
+  birthDate?: number
+}
+
+// ---- Health: Gewicht, Phasen, Koerperfett (Dexie-Version 3) ----
+
+export interface WeightEntry {
+  id: string // dayKey(dayStart(date)) - ein Eintrag pro Tag, idempotent
+  date: number // dayStart, kein Uhrzeit-Anteil
+  weightKg: number
+}
+
+// Gedaechtnis fuers naechste Mal gibt es hier nicht - stattdessen wird die
+// aktuelle Phase umgeschaltet; die Zeitraeume fuer die Chart-Baender ergeben
+// sich aus den Luecken zwischen den Phasenwechseln (siehe computePhaseBands).
+export type BodyPhase = 'aufbau' | 'diaet' | 'halten'
+export interface PhaseChange {
+  id: string // dayKey(dayStart(date)) - ein Phasenwechsel pro Tag
+  date: number // ab diesem Tag gilt `phase`
+  phase: BodyPhase
+}
+
+export type CaliperMethod = '3-punkt' | '7-punkt'
+export interface BodyFatEntry {
+  id: string
+  date: number
+  method: CaliperMethod
+  // mm-Werte je Messstelle, nur die fuer Methode+Geschlecht relevanten befuellt.
+  sites: {
+    chest?: number
+    abdomen?: number
+    thigh?: number
+    triceps?: number
+    suprailiac?: number
+    midaxillary?: number
+    subscapular?: number
+  }
+  // Berechnet + eingefroren zum Erfassungszeitpunkt (Alter/Formel koennten sich
+  // sonst rueckwirkend aendern, wenn z.B. das Geburtsdatum korrigiert wird).
+  bodyFatPercent: number
 }
 
 export interface BackupFile {
@@ -167,4 +214,8 @@ export interface BackupFile {
   settings: AppSettings | null
   // Erst ab Backup-Version 3 vorhanden - beim Import optional behandeln.
   activities?: Activity[]
+  // Erst ab Backup-Version 4 vorhanden - beim Import optional behandeln.
+  weightEntries?: WeightEntry[]
+  phaseChanges?: PhaseChange[]
+  bodyFatEntries?: BodyFatEntry[]
 }

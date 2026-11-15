@@ -87,12 +87,14 @@ export default function StatsPage() {
   const [newAiQuestion, setNewAiQuestion] = useState('')
   const [aiExporting, setAiExporting] = useState(false)
   const [aiCopyMsg, setAiCopyMsg] = useState<string | null>(null)
+  const [shareMsg, setShareMsg] = useState<string | null>(null)
 
   async function shareStats() {
     const node = exportRef.current
     if (!node) return
     setSharing(true)
     setExporting(true)
+    setShareMsg(null)
     // Zwei Frames warten, damit das Layout ohne Scroll-Clipping steht.
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
     const name = `statistik-${new Date().toISOString().slice(0, 10)}.png`
@@ -100,7 +102,10 @@ export default function StatsPage() {
     setExporting(false)
     setSharing(false)
     if (res === 'failed') {
-      alert('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
+      // Bewusst kein alert(): nach der Rueckkehr aus dem OS-Share-Sheet kann ein
+      // blockierender Dialog in der installierten PWA unsichtbar haengen bleiben
+      // und die ganze App unbedienbar machen (gemeldeter "Absturz" nach KI-Export).
+      setShareMsg('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
     }
   }
 
@@ -119,10 +124,13 @@ export default function StatsPage() {
 
   async function exportForAi() {
     setAiExporting(true)
+    setAiCopyMsg(null)
     const markdown = await buildAiExportMarkdown(aiQuestions)
     const res = await shareAiExport(markdown)
     setAiExporting(false)
-    if (res === 'failed') alert('Export konnte nicht erstellt werden.')
+    // Bewusst kein alert() hier (siehe shareStats) - genau dieser Fall wurde als
+    // "App haengt nach dem Export" gemeldet.
+    if (res === 'failed') setAiCopyMsg('Export konnte nicht erstellt werden.')
   }
 
   async function copyForAi() {
@@ -441,7 +449,7 @@ export default function StatsPage() {
               {sharing ? 'Erstelle…' : 'Als Bild teilen'}
             </button>
             <p className="mt-2 text-center text-xs text-neutral-600">
-              Teilt alles, was gerade angezeigt wird – inklusive der ausgewählten Übung.
+              {shareMsg ?? 'Teilt alles, was gerade angezeigt wird – inklusive der ausgewählten Übung.'}
             </p>
           </div>
         </>

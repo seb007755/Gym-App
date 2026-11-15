@@ -47,16 +47,26 @@ function niceTicks(min: number, max: number, count = 3): number[] {
  * Herstellern nicht vergleichbar, deshalb bewusst getrennte Linien statt einer
  * durchgehenden Kurve, die einen Geraetewechsel als Fortschritt lesen wuerde.
  */
+export interface ChartBand {
+  start: number
+  end: number
+  color: string
+}
+
 export function LineChart({
   series,
   height = 190,
   unit = 'kg',
   formatX,
+  bands,
 }: {
   series: LineSeries[]
   height?: number
   unit?: string
   formatX: (ts: number) => string
+  // Hintergrund-Zeitraum-Baender (z.B. Trainingsphasen) - niedrige Opazitaet
+  // der Farbe erwartet, sonst verdeckt es die Linie/das Raster.
+  bands?: ChartBand[]
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [active, setActive] = useState<number | null>(null)
@@ -127,6 +137,23 @@ export function LineChart({
         onPointerMove={(e) => e.buttons > 0 && pick(e.clientX)}
         onPointerLeave={() => setActive(null)}
       >
+        {/* Phasen-Baender: ganz unten, vor Raster/Linie, auf den Datenbereich geclippt */}
+        {bands?.map((b, i) => {
+          const start = Math.max(bounds.xMin, Math.min(b.start, bounds.xMax))
+          const end = Math.max(bounds.xMin, Math.min(b.end, bounds.xMax))
+          if (end <= start) return null
+          return (
+            <rect
+              key={i}
+              x={sx(start)}
+              y={PAD.top}
+              width={Math.max(0, sx(end) - sx(start))}
+              height={plotH}
+              fill={b.color}
+            />
+          )
+        })}
+
         {/* Zurueckhaltendes Raster */}
         {ticks.map((t) => (
           <g key={t}>

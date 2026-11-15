@@ -45,6 +45,7 @@ export default function SummaryPage() {
   const session = useLiveQuery(() => db.sessions.get(sessionId!), [sessionId])
   const cardRef = useRef<HTMLDivElement>(null)
   const [saving, setSaving] = useState(false)
+  const [shareMsg, setShareMsg] = useState<string | null>(null)
 
   if (session === undefined) return null
   if (!session) {
@@ -62,10 +63,14 @@ export default function SummaryPage() {
   async function saveImage() {
     if (!cardRef.current) return
     setSaving(true)
+    setShareMsg(null)
     const name = `training-${new Date(session!.date).toISOString().slice(0, 10)}.png`
     const res = await shareNodeAsImage(cardRef.current, name, 'Training')
+    // Bewusst kein alert(): nach der Rueckkehr aus dem OS-Share-Sheet kann ein
+    // blockierender Dialog in der installierten PWA unsichtbar haengen bleiben
+    // und die ganze App unbedienbar machen.
     if (res === 'failed') {
-      alert('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
+      setShareMsg('Bild konnte nicht erstellt werden. Nutze einfach einen Screenshot.')
     }
     setSaving(false)
   }
@@ -175,7 +180,7 @@ export default function SummaryPage() {
           </button>
         </div>
         <p className="mt-3 text-center text-xs text-neutral-600">
-          Tipp: „Als Bild teilen" → in Fotos speichern oder direkt dem Trainer schicken.
+          {shareMsg ?? 'Tipp: „Als Bild teilen" → in Fotos speichern oder direkt dem Trainer schicken.'}
         </p>
       </div>
     </div>
